@@ -1,0 +1,60 @@
+/* Bu CSS fayl: sahifaning "kiyimi" - ranglar, o'lchamlar, joylashuv. */
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f6f2ee;
+  color: #3a2410;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  background: #E8731A;      /* Lumant to'q sariq rangi */
+  color: white;
+  text-align: center;
+  padding: 32px 16px 24px;
+}
+
+.logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+h1 { margin: 12px 0 4px; font-size: 28px; }
+.subtitle { margin: 0; opacity: 0.9; }
+
+main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 20px;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.card {
+  background: white;
+  border-radius: 14px;
+  padding: 22px 18px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #5A2E0E;           /* Lumant jigarrang rangi */
+  text-decoration: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.card:active { transform: scale(0.98); }
+
+footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 13px;
+  color: #8a6a50;
+}
