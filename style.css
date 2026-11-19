@@ -58,3 +58,38 @@ footer {
   font-size: 13px;
   color: #8a6a50;
 }
+
+/* ---------- Login va sverka uchun qo'shimcha dizayn ---------- */
+header.kichik { padding: 14px 16px; position: relative; }
+header.kichik h1 { margin: 0; font-size: 22px; }
+.orqaga { position: absolute; left: 16px; top: 18px; color: white; text-decoration: none; }
+
+.panel {
+  background: white; max-width: 900px; width: calc(100% - 32px);
+  margin: 20px auto; padding: 20px; border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08); box-sizing: border-box;
+}
+.panel h2 { margin-top: 0; }
+input, button {
+  width: 100%; box-sizing: border-box; font-size: 17px;
+  padding: 12px 14px; margin-bottom: 10px; border-radius: 10px;
+  border: 1px solid #d9cfc6;
+}
+button { background: #E8731A; color: white; border: none; font-weight: 600; }
+.xato { color: #c0392b; min-height: 1em; }
+
+.card.off { opacity: 0.45; }
+.card small { display: block; font-weight: 400; font-size: 13px; }
+.kim { grid-column: 1 / -1; text-align: center; color: #8a6a50; }
+
+.qoldiq { background: #fbefe4; border-radius: 12px; padding: 16px; text-align: center; }
+.qoldiq span, .qoldiq small { display: block; color: #8a6a50; }
+.qoldiq b { font-size: 28px; color: #5A2E0E; }
+.soni { color: #8a6a50; }
+
+.jadval-oyna { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 8px 6px; border-bottom: 1px solid #eee3da; text-align: left; white-space: nowrap; }
+th { background: #f6f2ee; position: sticky; top: 0; }
+td.raqam { text-align: right; }
+tr.minus td.raqam:first-of-type { color: #1e8449; }

@@ -1,22 +1,15 @@
 <!DOCTYPE html>
-<!-- Bu HTML fayl: sahifaning "skeleti". Brauzer shu faylni o'qib, sahifani chizadi. -->
+<!-- Bosh sahifa: avval login, keyin bo'limlar menyusi -->
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
-  <!-- Telefonda sahifa to'g'ri o'lchamda ko'rinishi uchun -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lumant ERP</title>
-
-  <!-- iPhone ekraniga qo'shilganda chiqadigan IKONKA (bugungi muammoning yechimi) -->
   <link rel="apple-touch-icon" href="icon-180.png">
-  <!-- iPhone'da ilovaga o'xshab to'liq ekranda ochilishi uchun -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Lumant ERP">
-  <!-- Android uchun ilova sozlamalari -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#E8731A">
-
-  <!-- Dizayn (ranglar, shriftlar) alohida faylda -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,14 +19,59 @@
     <p class="subtitle">Beton mahsulotlari korxonasi uchun boshqaruv tizimi</p>
   </header>
 
-  <main>
-    <!-- Kelajakdagi bo'limlar. Hozircha faqat tugmalar, keyin ularni ishlatamiz. -->
-    <a class="card" href="#">💰 Qarzlar va sverka</a>
-    <a class="card" href="#">🏭 Ishlab chiqarish</a>
-    <a class="card" href="#">📦 Ombor</a>
-    <a class="card" href="#">💵 Kassa</a>
+  <!-- 1) LOGIN FORMASI: tizimga kirmagan bo'lsa ko'rinadi -->
+  <form id="login" class="panel" hidden>
+    <h2>Tizimga kirish</h2>
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="parol" type="password" placeholder="Parol" autocomplete="current-password" required>
+    <button type="submit">Kirish</button>
+    <p id="xato" class="xato"></p>
+  </form>
+
+  <!-- 2) MENYU: kirgandan keyin ko'rinadi -->
+  <main id="menyu" hidden>
+    <a class="card" href="sverka.html">💰 Qarzlar va sverka</a>
+    <a class="card off">🏭 Ishlab chiqarish <small>tez kunda</small></a>
+    <a class="card off">📦 Ombor <small>tez kunda</small></a>
+    <a class="card off">💵 Kassa <small>tez kunda</small></a>
+    <p class="kim">Siz: <b id="kim"></b> · <a href="#" id="chiqish">Chiqish</a></p>
   </main>
 
   <footer>Kogon tumani · Lumant Beton</footer>
+
+  <script type="module">
+    import { db } from './db.js';
+
+    const login = document.getElementById('login');
+    const menyu = document.getElementById('menyu');
+
+    async function korsat() {
+      const { data } = await db.auth.getSession();
+      const user = data.session?.user;
+      login.hidden = !!user;
+      menyu.hidden = !user;
+      if (user) document.getElementById('kim').textContent = user.email;
+    }
+
+    login.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const xato = document.getElementById('xato');
+      xato.textContent = 'Tekshirilmoqda...';
+      const { error } = await db.auth.signInWithPassword({
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('parol').value,
+      });
+      xato.textContent = error ? 'Email yoki parol noto\'g\'ri' : '';
+      korsat();
+    });
+
+    document.getElementById('chiqish').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await db.auth.signOut();
+      korsat();
+    });
+
+    korsat();
+  </script>
 </body>
 </html>

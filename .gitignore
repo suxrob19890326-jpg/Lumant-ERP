@@ -1,0 +1,6 @@
+# Maxfiy ma'lumotlar GitHub'ga chiqmasin
+data/
+*.xlsx
+*.csv
+.env
+.DS_Store
