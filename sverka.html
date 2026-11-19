@@ -25,18 +25,34 @@
         <b id="qoldiq"></b>
         <small id="izohQoldiq"></small>
       </div>
+      <p id="malumot" class="soni"></p>
       <p class="soni"><span id="soni"></span> ta yozuv</p>
       <div class="jadval-oyna">
         <table>
           <thead>
             <tr>
               <th>Sana</th><th>Mahsulot</th><th>Miqdor</th><th>Narx</th>
-              <th>Summa</th><th>Qoldiq</th><th>Avto</th><th>Izoh</th>
+              <th>Summa</th><th>Qoldiq</th><th>Avto</th><th>Izoh</th><th>Kiritgan</th>
             </tr>
           </thead>
           <tbody id="qatorlar"></tbody>
         </table>
       </div>
+
+      <details id="arxivBlok" class="arxiv" hidden>
+        <summary>Arxiv yozuvlari (<span id="arxivSoni"></span> ta) — qoldiqqa qo'shilmaydi</summary>
+        <div class="jadval-oyna">
+          <table>
+            <thead>
+              <tr>
+                <th>Sana</th><th>Mahsulot</th><th>Miqdor</th><th>Narx</th>
+                <th>Summa</th><th>Avto</th><th>Izoh</th>
+              </tr>
+            </thead>
+            <tbody id="arxivQatorlar"></tbody>
+          </table>
+        </div>
+      </details>
     </div>
   </section>
 
@@ -45,24 +61,38 @@
 
     await loginShart();
 
+    // Nomlarda qo'shtirnoq va < > bo'lishi mumkin — xavfsiz ko'rsatish uchun
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
     // 1) Mijozlar ro'yxatini yuklash (qidiruv uchun)
     const { data: mijozlar, error } = await db
-      .from('mijoz_qoldiq').select('id, nomi, qoldiq').order('nomi');
+      .from('mijoz_qoldiq')
+      .select('id, nomi, telefon, qoldiq, holat, kochirildi, bifoza_nomi, bifoza_qarzi, farq, yozuvlar_jami')
+      .order('tartib');
     if (error) alert('Xato: ' + error.message);
 
-    const royxat = document.getElementById('mijozlar');
-    royxat.innerHTML = mijozlar.map(m => `<option value="${m.nomi}">`).join('');
+    document.getElementById('mijozlar').innerHTML =
+      (mijozlar || []).map(m => `<option value="${esc(m.nomi)}">`).join('');
 
     // 2) Mijoz tanlanganda sverkani ko'rsatish
     document.getElementById('qidir').addEventListener('change', async (e) => {
       const mijoz = mijozlar.find(m => m.nomi === e.target.value.trim());
       if (!mijoz) return;
 
-      const { data: yozuvlar } = await db
-        .from('yozuvlar')
-        .select('sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
-        .eq('mijoz_id', mijoz.id)
-        .order('sana').order('id');
+      const [{ data: yozuvlar }, { data: arxiv }] = await Promise.all([
+        db.from('yozuvlar')
+          .select('sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, kiritgan_ismi, mahsulotlar(nomi)')
+          .eq('mijoz_id', mijoz.id)
+          .order('sana').order('tartib').order('id'),
+        db.from('arxiv')
+          .select('sana, sana_matn, mahsulot, olchov, miqdor, narx, summa, avto_raqami, izoh, asl_matn')
+          .eq('nomi', mijoz.nomi)
+          .order('qator'),
+      ]);
+
+      // Sheets'dagi kabi: miqdor + / − belgisi bilan (olindi/to'landi → minus)
+      const belgi = (y) => (y.turi === 'tolov_keldi' || y.turi === 'mahsulot_olindi') ? -1 : 1;
 
       let qoldiq = 0;
       document.getElementById('qatorlar').innerHTML = yozuvlar.map(y => {
@@ -70,20 +100,51 @@
         const nomi = y.mahsulotlar?.nomi || '';
         return `<tr class="${y.summa < 0 ? 'minus' : ''}">
           <td>${sana(y.sana)}</td>
-          <td>${nomi} ${y.qulf ? '🔒' : ''}</td>
-          <td>${y.miqdor ? pul(y.miqdor) + ' ' + (y.olchov || '') : ''}</td>
+          <td>${esc(nomi)} ${y.qulf ? '🔒' : ''}</td>
+          <td>${y.miqdor != null ? pul(belgi(y) * y.miqdor) + ' ' + esc(y.olchov || '') : ''}</td>
           <td>${pul(y.narx)}</td>
           <td class="raqam">${pul(y.summa)}</td>
           <td class="raqam"><b>${pul(qoldiq)}</b></td>
-          <td>${y.avto_raqami || ''}</td>
-          <td>${y.izoh || ''}</td>
+          <td>${esc(y.avto_raqami)}</td>
+          <td>${esc(y.izoh)}</td>
+          <td>${esc(y.kiritgan_ismi)}</td>
         </tr>`;
       }).join('');
 
-      document.getElementById('qoldiq').textContent = pul(qoldiq) + ' so\'m';
-      document.getElementById('izohQoldiq').textContent =
-        qoldiq > 0 ? 'Mijoz bizdan qarz' : qoldiq < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
+      // Jami qoldiq — Sheets'dagi "Mijozlar → Колдик" bilan bir xil
+      const q = Number(mijoz.qoldiq);
+      document.getElementById('qoldiq').textContent = pul(q) + ' so\'m';
+      document.getElementById('izohQoldiq').textContent = mijoz.kochirildi
+        ? (q > 0 ? 'Mijoz bizdan qarz' : q < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq')
+        : 'Sverka hali ko\'chirilmagan (Кўчирилди belgisi yo\'q) — yozuvlar yig\'indisi: '
+          + pul(mijoz.yozuvlar_jami) + ' so\'m';
+
+      const qism = [];
+      if (mijoz.telefon) qism.push('Tel: ' + esc(mijoz.telefon));
+      if (mijoz.kochirildi) qism.push('✅ Ko\'chirildi: ' + sana(mijoz.kochirildi));
+      if (mijoz.bifoza_nomi) qism.push(`Bifoza (${esc(mijoz.bifoza_nomi)}): ${pul(mijoz.bifoza_qarzi)} · farq: ${pul(mijoz.farq)}`);
+      document.getElementById('malumot').innerHTML = qism.join(' · ');
+
       document.getElementById('soni').textContent = yozuvlar.length;
+
+      // Arxiv (eski yozuvlar)
+      const blok = document.getElementById('arxivBlok');
+      blok.hidden = !arxiv?.length;
+      blok.open = false;
+      document.getElementById('arxivSoni').textContent = arxiv?.length || 0;
+      document.getElementById('arxivQatorlar').innerHTML = (arxiv || []).map(a => {
+        const asl = a.asl_matn || {};
+        return `<tr class="${a.summa < 0 ? 'minus' : ''}">
+          <td>${a.sana ? sana(a.sana) : esc(a.sana_matn)}</td>
+          <td>${esc(a.mahsulot)}</td>
+          <td>${a.miqdor != null ? pul(a.miqdor) + ' ' + esc(a.olchov || '') : esc(asl.miqdor)}</td>
+          <td>${a.narx != null ? pul(a.narx) : esc(asl.narx)}</td>
+          <td class="raqam">${a.summa != null ? pul(a.summa) : esc(asl.summa)}</td>
+          <td>${esc(a.avto_raqami)}</td>
+          <td>${esc(a.izoh)}</td>
+        </tr>`;
+      }).join('');
+
       document.getElementById('natija').hidden = false;
     });
   </script>

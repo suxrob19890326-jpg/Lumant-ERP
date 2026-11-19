@@ -93,3 +93,6 @@ th, td { padding: 8px 6px; border-bottom: 1px solid #eee3da; text-align: left; w
 th { background: #f6f2ee; position: sticky; top: 0; }
 td.raqam { text-align: right; }
 tr.minus td.raqam:first-of-type { color: #1e8449; }
+
+.arxiv { margin-top: 20px; }
+.arxiv summary { cursor: pointer; color: #8a6a50; padding: 8px 0; }
