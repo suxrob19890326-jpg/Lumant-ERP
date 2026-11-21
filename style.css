@@ -151,3 +151,15 @@ button:disabled { opacity: 0.6; }
 .kun-jami { display: flex; justify-content: center; gap: 24px; margin: 12px 0 4px; font-size: 15px; }
 .kirim, .yozuv.kirim .summa { color: #1e8449; }
 .chiqim, .yozuv.chiqim .summa { color: #c0392b; }
+
+/* ---------- Ombor ---------- */
+.belgi { display: flex; align-items: center; gap: 8px; margin: -2px 0 8px; }
+.belgi input { width: auto; margin: 0; }
+.bosiladi { cursor: pointer; }
+.bosiladi:active { background: #fbefe4; }
+.xira { opacity: 0.5; }
+.yozuv .summa small { font-weight: 400; color: #8a6a50; }
+.kichik-sarlavha { font-size: 17px; margin: 0 0 6px; }
+.xato.ok { color: #1e8449; }
+.panel > p.xato:last-child { margin: 6px 0 0; }
+.panel > p.xato:last-child:empty { min-height: 0; }
