@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<!-- Spravochniklar: mijozlar va mahsulotlarni qo'shish / tahrirlash -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spravochniklar · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase kutubxonasi: bitta fayl, o'zimizning saytdan (tez yuklanadi) -->
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga" id="orqaga">‹ Menyu</a>
+    <h1>Spravochniklar</h1>
+  </header>
+
+  <!-- RO'YXAT -->
+  <section class="panel" id="royxatOyna">
+    <div class="turlar" id="tablar">
+      <button type="button" data-t="mijoz">👥 Mijozlar</button>
+      <button type="button" data-t="mahsulot">🧱 Mahsulotlar</button>
+    </div>
+    <button type="button" id="yangi">➕ Yangi mijoz</button>
+    <input id="qidir" placeholder="Qidirish (lotin yoki kirill)..." autocomplete="off">
+    <p id="holat" class="soni">Yuklanmoqda...</p>
+    <div id="royxat"></div>
+    <button type="button" class="tugma-oddiy" id="koproq" hidden>Yana ko'rsatish</button>
+  </section>
+
+  <!-- TAHRIRLASH -->
+  <form id="forma" class="panel" autocomplete="off" hidden onsubmit="event.preventDefault()">
+    <h2 class="kichik-sarlavha" id="formaSarlavha"></h2>
+    <label>Nomi * <input id="f_nomi" required></label>
+    <p id="oxshash" class="ogoh" hidden></p>
+
+    <div id="mijozMaydon">
+      <label>Telefon <input id="f_telefon" type="tel" inputmode="tel" placeholder="+998 90 123 45 67"></label>
+      <label>Izoh <input id="f_izoh" placeholder="manzil, mas'ul shaxs..."></label>
+      <p id="f_qoldiq" class="soni"></p>
+    </div>
+
+    <div id="mahsulotMaydon">
+      <div class="ikki">
+        <label>O'lchov <input id="f_olchov" list="olchovlar" placeholder="куб, кг, дона..."></label>
+        <label>Narx <input id="f_narx" inputmode="decimal" placeholder="0"></label>
+      </div>
+      <datalist id="olchovlar"></datalist>
+      <label id="turkumQism">Turkum
+        <select id="f_turkum">
+          <option value="">❔ Belgilanmagan</option>
+          <option value="xomashyo">🪨 Xomashyo</option>
+          <option value="tayyor">🧱 Tayyor mahsulot</option>
+        </select>
+      </label>
+    </div>
+
+    <button type="submit" id="saqla">Saqlash</button>
+    <p id="xato" class="xato"></p>
+  </form>
+
+  <script type="module">
+    import { db, loginShart, pul, toza, kalit, mos, saralash, hammasi } from './db.js';
+
+    await loginShart();
+    const $ = (id) => document.getElementById(id);
+    function son(s) {
+      const t = String(s).replace(/\s/g, '').replace(',', '.');
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    // ---------- Yuklash ----------
+    let mijozlar = [], mahsulotlar = [], turkumBor = true;
+    async function yukla() {
+      const [m, q] = await Promise.all([
+        hammasi(() => db.from('mijozlar').select('id, nomi, telefon, izoh').order('nomi').order('id')),
+        hammasi(() => db.from('mijoz_qoldiq').select('id, qoldiq').order('id')),
+      ]);
+      let p = await hammasi(() => db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx, turkum').order('nomi').order('id'));
+      if (p.error && /turkum/.test(p.error.message)) {   // 04_ombor.sql ishga tushirilmagan
+        turkumBor = false;
+        p = await hammasi(() => db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx').order('nomi').order('id'));
+      }
+      const xato = m.error || q.error || p.error;
+      if (xato) { $('holat').textContent = 'Xato: ' + xato.message; return false; }
+      const qoldiq = new Map(q.data.map(r => [r.id, Number(r.qoldiq)]));
+      mijozlar = m.data.map(r => ({ ...r, qoldiq: qoldiq.get(r.id) ?? 0 }));
+      mahsulotlar = p.data;
+      $('turkumQism').hidden = !turkumBor;
+      $('olchovlar').innerHTML = [...new Set(mahsulotlar.map(x => x.olchov).filter(Boolean))].sort()
+        .map(o => `<option value="${toza(o)}">`).join('');
+      return true;
+    }
+
+    // ---------- Ro'yxat ----------
+    let tab = 'mijoz', korsat = 50;
+    const royxat = () => tab === 'mijoz' ? mijozlar : mahsulotlar;
+    const TURKUM = { xomashyo: '🪨', tayyor: '🧱' };
+
+    function tabTanla(t) {
+      tab = t;
+      document.querySelectorAll('#tablar button').forEach(b => b.classList.toggle('tanlangan', b.dataset.t === t));
+      $('yangi').textContent = t === 'mijoz' ? '➕ Yangi mijoz' : '➕ Yangi mahsulot';
+      korsat = 50;
+      chiz();
+    }
+    $('tablar').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-t]');
+      if (b) { $('qidir').value = ''; tabTanla(b.dataset.t); }
+    });
+    $('qidir').addEventListener('input', () => { korsat = 50; chiz(); });
+    $('koproq').addEventListener('click', () => { korsat += 100; chiz(); });
+
+    function chiz() {
+      const soz = $('qidir').value.trim();
+      const r = soz ? saralash(royxat().filter(x => mos(x.nomi, soz)), soz) : royxat();
+      $('holat').textContent = soz ? `${r.length} ta topildi` : `${r.length} ta ${tab === 'mijoz' ? 'mijoz' : 'mahsulot'}`;
+      $('royxat').innerHTML = r.slice(0, korsat).map(x => tab === 'mijoz'
+        ? `<div class="yozuv bosiladi" data-id="${toza(x.id)}">
+            <div class="yuqori"><span class="nomi">${toza(x.nomi)}</span>
+              <span class="summa ${x.qoldiq < 0 ? 'kirim' : ''}">${x.qoldiq ? pul(x.qoldiq) : ''}</span></div>
+            ${x.telefon || x.izoh ? `<div class="pastki"><span>${[x.telefon && '📞 ' + toza(x.telefon), toza(x.izoh)].filter(Boolean).join(' · ')}</span></div>` : ''}
+          </div>`
+        : `<div class="yozuv bosiladi" data-id="${toza(x.id)}">
+            <div class="yuqori"><span class="nomi">${TURKUM[x.turkum] || ''} ${toza(x.nomi)}</span>
+              <span class="summa">${x.oxirgi_narx ? pul(x.oxirgi_narx) : ''} <small>${toza(x.olchov)}</small></span></div>
+          </div>`).join('');
+      $('koproq').hidden = r.length <= korsat;
+    }
+    $('royxat').addEventListener('click', (e) => {
+      const el = e.target.closest('[data-id]');
+      if (el) och(royxat().find(x => x.id == el.dataset.id));
+    });
+
+    // ---------- Forma ----------
+    let tahrir = null;   // null = yangi
+    function och(x) {
+      tahrir = x || null;
+      const mj = tab === 'mijoz';
+      $('formaSarlavha').textContent = x ? (mj ? 'Mijozni tahrirlash' : 'Mahsulotni tahrirlash') : (mj ? 'Yangi mijoz' : 'Yangi mahsulot');
+      $('mijozMaydon').hidden = !mj;
+      $('mahsulotMaydon').hidden = mj;
+      $('f_nomi').value = x?.nomi || ($('qidir').value.trim() && !x ? $('qidir').value.trim() : '');
+      $('f_telefon').value = x?.telefon || '';
+      $('f_izoh').value = x?.izoh || '';
+      $('f_olchov').value = x?.olchov || '';
+      $('f_narx').value = x?.oxirgi_narx ? pul(x.oxirgi_narx) : '';
+      $('f_turkum').value = x?.turkum || '';
+      $('f_qoldiq').innerHTML = mj && x
+        ? `Qoldiq: <b>${pul(x.qoldiq)} so'm</b> · <a href="sverka.html?mijoz=${encodeURIComponent(x.id)}">Sverkani ochish</a>` : '';
+      $('xato').textContent = '';
+      $('xato').classList.remove('ok');
+      oxshashTekshir();
+      $('royxatOyna').hidden = true;
+      $('forma').hidden = false;
+      $('orqaga').textContent = '‹ Ro\'yxat';
+      scrollTo(0, 0);
+      $('f_nomi').focus();
+    }
+    function yop() {
+      $('forma').hidden = true;
+      $('royxatOyna').hidden = false;
+      $('orqaga').textContent = '‹ Menyu';
+      chiz();
+    }
+    $('yangi').addEventListener('click', () => och(null));
+    $('orqaga').addEventListener('click', (e) => {
+      if (!$('forma').hidden) { e.preventDefault(); yop(); }
+    });
+
+    // Lotin/kirillda bir xil yoki juda o'xshash nom bormi?
+    function oxshashlar(nomi) {
+      const k = kalit(nomi);
+      if (!k) return [];
+      return royxat().filter(x => x.id !== tahrir?.id && kalit(x.nomi) === k);
+    }
+    function oxshashTekshir() {
+      const r = oxshashlar($('f_nomi').value);
+      $('oxshash').hidden = !r.length;
+      $('oxshash').textContent = r.length ? `⚠️ Shunday nom allaqachon bor: ${r.map(x => x.nomi).join(', ')}` : '';
+    }
+    $('f_nomi').addEventListener('input', oxshashTekshir);
+
+    // ---------- Saqlash ----------
+    $('forma').addEventListener('submit', async () => {
+      const xato = $('xato');
+      xato.textContent = '';
+      xato.classList.remove('ok');
+      const nomi = $('f_nomi').value.trim().replace(/\s+/g, ' ');
+      if (!nomi) { xato.textContent = 'Nomini yozing'; $('f_nomi').focus(); return; }
+      const ox = oxshashlar(nomi);
+      if (ox.length && !confirm(`"${ox[0].nomi}" allaqachon bor (lotin/kirillda bir xil). Baribir alohida saqlansinmi?`)) return;
+
+      let qator, jadval;
+      if (tab === 'mijoz') {
+        jadval = 'mijozlar';
+        qator = { nomi, telefon: $('f_telefon').value.trim() || null, izoh: $('f_izoh').value.trim() || null };
+      } else {
+        jadval = 'mahsulotlar';
+        const narx = son($('f_narx').value);
+        if (Number.isNaN(narx) || narx < 0) { xato.textContent = 'Narxni to\'g\'ri yozing'; return; }
+        qator = { nomi, olchov: $('f_olchov').value.trim() || null, oxirgi_narx: narx };
+        if (turkumBor) qator.turkum = $('f_turkum').value || null;
+      }
+
+      const tugma = $('saqla');
+      tugma.disabled = true;
+      tugma.textContent = 'Saqlanmoqda...';
+      const so = tahrir
+        ? db.from(jadval).update(qator).eq('id', tahrir.id).select().single()
+        : db.from(jadval).insert(qator).select().single();
+      const { data, error } = await so;
+      tugma.disabled = false;
+      tugma.textContent = 'Saqlash';
+      if (error) {
+        xato.textContent = error.code === '23505' || /duplicate|unique/i.test(error.message)
+          ? 'Bu nom allaqachon bor (aynan shu yozilishda). Boshqa nom yozing.'
+          : 'Saqlanmadi: ' + error.message;
+        return;
+      }
+      const r = royxat();
+      if (tahrir) Object.assign(tahrir, data);
+      else r.push(tab === 'mijoz' ? { ...data, qoldiq: 0 } : data);
+      r.sort((a, b) => a.nomi.localeCompare(b.nomi));
+      tahrir = r.find(x => x.id === data.id);
+      xato.textContent = '✅ Saqlandi';
+      xato.classList.add('ok');
+      $('formaSarlavha').textContent = tab === 'mijoz' ? 'Mijozni tahrirlash' : 'Mahsulotni tahrirlash';
+      if (tab === 'mijoz') $('f_qoldiq').innerHTML =
+        `Qoldiq: <b>${pul(tahrir.qoldiq)} so'm</b> · <a href="sverka.html?mijoz=${encodeURIComponent(tahrir.id)}">Sverkani ochish</a>`;
+    });
+
+    // ---------- Boshlang'ich holat ----------
+    if (await yukla()) {
+      const url = new URLSearchParams(location.search);
+      tabTanla(url.get('tab') === 'mahsulot' ? 'mahsulot' : 'mijoz');
+    }
+  </script>
+</body>
+</html>

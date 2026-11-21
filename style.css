@@ -214,3 +214,6 @@ th.raqam { text-align: right; }
   .akt-xulosa { margin: 12px 0; font-size: 12px; }
   .akt-imzo { display: flex; justify-content: space-between; gap: 24px; margin-top: 24px; font-size: 12px; }
 }
+
+/* ---------- Spravochniklar ---------- */
+.ogoh { background: #fff4d6; color: #7a5a00; border-radius: 10px; padding: 8px 12px; margin: -4px 0 10px; font-size: 14px; }
