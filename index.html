@@ -24,11 +24,11 @@
   </header>
 
   <!-- 1) LOGIN FORMASI: tizimga kirmagan bo'lsa ko'rinadi -->
-  <form id="login" class="panel" hidden>
+  <form id="login" class="panel" hidden onsubmit="event.preventDefault()">
     <h2>Tizimga kirish</h2>
     <input id="email" type="email" placeholder="Email" autocomplete="username" required>
     <input id="parol" type="password" placeholder="Parol" autocomplete="current-password" required>
-    <button type="submit">Kirish</button>
+    <button type="submit" id="kirish">Kirish</button>
     <p id="xato" class="xato"></p>
   </form>
 
@@ -61,12 +61,20 @@
     login.addEventListener('submit', async (e) => {
       e.preventDefault();
       const xato = document.getElementById('xato');
+      const tugma = document.getElementById('kirish');
       xato.textContent = 'Tekshirilmoqda...';
-      const { error } = await db.auth.signInWithPassword({
-        email: document.getElementById('email').value.trim(),
-        password: document.getElementById('parol').value,
-      });
-      xato.textContent = error ? 'Email yoki parol noto\'g\'ri' : '';
+      tugma.disabled = true;
+      let error;
+      try {
+        ({ error } = await db.auth.signInWithPassword({
+          email: document.getElementById('email').value.trim(),
+          password: document.getElementById('parol').value,
+        }));
+      } catch (e) { error = e; }
+      tugma.disabled = false;
+      if (!error) xato.textContent = '';
+      else if (error.status === 400) xato.textContent = 'Email yoki parol noto\'g\'ri';
+      else xato.textContent = 'Internet yoki serverda xato. Qayta urinib ko\'ring.';
       korsat();
     });
 

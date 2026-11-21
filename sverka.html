@@ -7,6 +7,8 @@
   <title>Sverka · Lumant ERP</title>
   <link rel="apple-touch-icon" href="icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
   <link rel="stylesheet" href="style.css">
   <!-- Supabase kutubxonasi: bitta fayl, o'zimizning saytdan (tez yuklanadi) -->
   <script src="vendor/supabase-2.119.2.js" defer></script>
@@ -83,14 +85,24 @@
     });
 
     // 3) Tanlangan mijozning sverkasi
+    let soralgan = 0;   // eng oxirgi tanlangan mijoz (eski javob ustiga yozmasin)
     async function korsat(mijoz) {
+      const men = ++soralgan;
       holat.textContent = 'Yuklanmoqda...';
-      const { data: yozuvlar, error } = await db
-        .from('yozuvlar')
-        .select('id, sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
-        .eq('mijoz_id', mijoz.id)
-        .order('sana').order('id');
-      if (error) { holat.textContent = 'Xato: ' + error.message; return; }
+      // Baza bir so'rovda ko'pi bilan 1000 qator beradi — shuning uchun bo'laklab olamiz
+      const yozuvlar = [];
+      for (let dan = 0; ; dan += 1000) {
+        const { data, error } = await db
+          .from('yozuvlar')
+          .select('id, sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
+          .eq('mijoz_id', mijoz.id)
+          .order('sana').order('id')
+          .range(dan, dan + 999);
+        if (men !== soralgan) return;
+        if (error) { holat.textContent = 'Xato: ' + error.message; return; }
+        yozuvlar.push(...data);
+        if (data.length < 1000) break;
+      }
       holat.textContent = '';
 
       let qoldiq = 0;

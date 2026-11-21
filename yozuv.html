@@ -7,6 +7,8 @@
   <title>Yangi yozuv · Lumant ERP</title>
   <link rel="apple-touch-icon" href="icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
   <link rel="stylesheet" href="style.css">
   <!-- Supabase kutubxonasi: bitta fayl, o'zimizning saytdan (tez yuklanadi) -->
   <script src="vendor/supabase-2.119.2.js" defer></script>
@@ -19,7 +21,7 @@
     <h1>Yangi yozuv</h1>
   </header>
 
-  <form id="forma" class="panel" autocomplete="off">
+  <form id="forma" class="panel" autocomplete="off" onsubmit="event.preventDefault()">
     <!-- 1) Turi -->
     <div class="turlar" id="turlar">
       <button type="button" data-tur="yuk_berildi">🚚 Yuk berildi</button>
@@ -62,7 +64,7 @@
     <label>Izoh <input id="izoh" placeholder="ixtiyoriy"></label>
 
     <button type="submit" id="saqla">Saqlash</button>
-    <p id="xato" class="xato"></p>
+    <p id="xato" class="xato">Ma'lumotlar yuklanmoqda...</p>
   </form>
 
   <!-- Saqlangandan keyin -->
@@ -108,6 +110,7 @@
       $('xato').textContent = 'Xato: ' + (mj.error || mh.error).message;
       throw mj.error || mh.error;
     }
+    $('xato').textContent = '';
     const mijozlar = mj.data;
     const mahsulotlar = mh.data;
     $('mahsulot').innerHTML += mahsulotlar.map(m =>
@@ -124,6 +127,8 @@
         b.classList.toggle('tanlangan', b.dataset.tur === t));
       $('mahsulotQism').hidden = !MAHSULOTLI.includes(t);
       $('tushuntir').textContent = TUSHUNTIR[t];
+      // Avtomatik hisoblangan summa boshqa turga o'tganda qolib ketmasin
+      if (!summaQolda) $('summa').value = '';
       hisobla();
     }
     $('turlar').addEventListener('click', (e) => {

@@ -10,8 +10,8 @@ export const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 export async function loginShart() {
   const { data } = await db.auth.getSession();
   if (!data.session) {
-    location.href = 'index.html';
-    return null;
+    location.replace('index.html');
+    return new Promise(() => {});   // sahifa kodi shu yerda to'xtaydi
   }
   return data.session.user;
 }
