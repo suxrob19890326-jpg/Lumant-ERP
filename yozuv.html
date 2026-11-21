@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<!-- Yangi yozuv: yuk berildi / to'lov keldi / mahsulot olindi / pul berildi -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yangi yozuv · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Yangi yozuv</h1>
+  </header>
+
+  <form id="forma" class="panel" autocomplete="off">
+    <!-- 1) Turi -->
+    <div class="turlar" id="turlar">
+      <button type="button" data-tur="yuk_berildi">🚚 Yuk berildi</button>
+      <button type="button" data-tur="tolov_keldi">💵 To'lov keldi</button>
+      <button type="button" data-tur="mahsulot_olindi">⬇️ Mahsulot olindi</button>
+      <button type="button" data-tur="pul_berildi">💸 Pul berildi</button>
+    </div>
+
+    <!-- 2) Sana va mijoz -->
+    <label>Sana <input id="sana" type="date" required></label>
+
+    <label>Mijoz
+      <input id="qidir" placeholder="Mijoz nomini yozing..." required>
+    </label>
+    <ul id="takliflar" class="takliflar" hidden></ul>
+    <p id="mijozHolat" class="soni"></p>
+
+    <!-- 3) Mahsulot qismi (faqat yuk / mahsulot turlarida) -->
+    <div id="mahsulotQism">
+      <label>Mahsulot
+        <select id="mahsulot"><option value="">— tanlang —</option></select>
+      </label>
+      <div class="ikki">
+        <label>Miqdor <span id="olchov" class="soni"></span>
+          <input id="miqdor" inputmode="decimal" placeholder="0">
+        </label>
+        <label>Narx
+          <input id="narx" inputmode="decimal" placeholder="0">
+        </label>
+      </div>
+      <label>Avto raqami <input id="avto" placeholder="01 A 123 BC"></label>
+    </div>
+
+    <!-- 4) Summa: yukda o'zi hisoblanadi, to'lovda qo'lda yoziladi -->
+    <label>Summa
+      <input id="summa" inputmode="decimal" placeholder="0">
+    </label>
+    <p id="tushuntir" class="tushuntir"></p>
+
+    <label>Izoh <input id="izoh" placeholder="ixtiyoriy"></label>
+
+    <button type="submit" id="saqla">Saqlash</button>
+    <p id="xato" class="xato"></p>
+  </form>
+
+  <!-- Saqlangandan keyin -->
+  <section id="tayyor" class="panel" hidden>
+    <div class="qoldiq">
+      <span>✅ Saqlandi</span>
+      <b id="yangiQoldiq"></b>
+      <small id="yangiIzoh"></small>
+    </div>
+    <button type="button" id="yana">Yana yozuv qo'shish</button>
+    <a id="sverkaga" class="tugma-ikkinchi" href="sverka.html">Sverkani ko'rish</a>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, pul, toza } from './db.js';
+
+    await loginShart();
+
+    const $ = (id) => document.getElementById(id);
+    const MAHSULOTLI = ['yuk_berildi', 'mahsulot_olindi'];
+    const TUSHUNTIR = {
+      yuk_berildi:     'Mijozning qarzi oshadi (+)',
+      tolov_keldi:     'Mijozning qarzi kamayadi (−)',
+      mahsulot_olindi: 'Bizning qarzimiz oshadi (−)',
+      pul_berildi:     'Bizning qarzimiz kamayadi (+)',
+    };
+
+    // "1 250 000,5" → 1250000.5 ; bo'sh bo'lsa null
+    function son(s) {
+      const t = String(s).replace(/\s/g, '').replace(',', '.');
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    const bugun = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
+
+    // ---------- Ma'lumotlarni yuklash ----------
+    const [mj, mh] = await Promise.all([
+      db.from('mijoz_qoldiq').select('id, nomi, qoldiq').order('nomi'),
+      db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx').order('nomi'),
+    ]);
+    if (mj.error || mh.error) {
+      $('xato').textContent = 'Xato: ' + (mj.error || mh.error).message;
+      throw mj.error || mh.error;
+    }
+    const mijozlar = mj.data;
+    const mahsulotlar = mh.data;
+    $('mahsulot').innerHTML += mahsulotlar.map(m =>
+      `<option value="${toza(m.id)}">${toza(m.nomi)}</option>`).join('');
+
+    // ---------- Holat ----------
+    let turi = 'yuk_berildi';
+    let mijoz = null;
+    let summaQolda = false;   // summani foydalanuvchi o'zi yozganmi
+
+    function turTanla(t) {
+      turi = t;
+      document.querySelectorAll('#turlar button').forEach(b =>
+        b.classList.toggle('tanlangan', b.dataset.tur === t));
+      $('mahsulotQism').hidden = !MAHSULOTLI.includes(t);
+      $('tushuntir').textContent = TUSHUNTIR[t];
+      hisobla();
+    }
+    $('turlar').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-tur]');
+      if (b) turTanla(b.dataset.tur);
+    });
+
+    // ---------- Mijoz qidiruvi ----------
+    const qidir = $('qidir'), takliflar = $('takliflar');
+
+    function mijozTanla(m) {
+      mijoz = m;
+      qidir.value = m.nomi;
+      takliflar.hidden = true;
+      $('mijozHolat').textContent = 'Hozirgi qoldiq: ' + pul(m.qoldiq) + ' so\'m';
+    }
+
+    qidir.addEventListener('input', () => {
+      mijoz = null;
+      $('mijozHolat').textContent = '';
+      const soz = qidir.value.trim().toLowerCase();
+      if (!soz) { takliflar.hidden = true; return; }
+      const mos = mijozlar.filter(m => m.nomi.toLowerCase().includes(soz)).slice(0, 15);
+      const aniq = mijozlar.some(m => m.nomi.toLowerCase() === soz);
+      takliflar.innerHTML = mos.map(m =>
+        `<li data-id="${toza(m.id)}"><span>${toza(m.nomi)}</span><small>${pul(m.qoldiq)}</small></li>`
+      ).join('') + (aniq ? '' : `<li data-yangi="1">➕ Yangi mijoz: <b>${toza(qidir.value.trim())}</b></li>`);
+      takliflar.hidden = false;
+    });
+
+    takliflar.addEventListener('click', async (e) => {
+      const li = e.target.closest('li');
+      if (!li) return;
+      if (li.dataset.id) return mijozTanla(mijozlar.find(m => m.id == li.dataset.id));
+      if (li.dataset.yangi) {
+        const nomi = qidir.value.trim();
+        if (!confirm(`"${nomi}" yangi mijoz sifatida qo'shilsinmi?`)) return;
+        const { data, error } = await db.from('mijozlar').insert({ nomi }).select('id, nomi').single();
+        if (error) { $('xato').textContent = 'Mijoz qo\'shilmadi: ' + error.message; return; }
+        const yangi = { ...data, qoldiq: 0 };
+        mijozlar.push(yangi);
+        mijozlar.sort((a, b) => a.nomi.localeCompare(b.nomi));
+        mijozTanla(yangi);
+      }
+    });
+
+    // ---------- Mahsulot, miqdor, narx → summa ----------
+    $('mahsulot').addEventListener('change', () => {
+      const m = mahsulotlar.find(x => x.id == $('mahsulot').value);
+      $('olchov').textContent = m?.olchov ? `(${m.olchov})` : '';
+      if (m?.oxirgi_narx) $('narx').value = pul(m.oxirgi_narx);
+      hisobla();
+    });
+    $('miqdor').addEventListener('input', hisobla);
+    $('narx').addEventListener('input', hisobla);
+    $('summa').addEventListener('input', () => { summaQolda = $('summa').value.trim() !== ''; });
+
+    function hisobla() {
+      if (!MAHSULOTLI.includes(turi) || summaQolda) return;
+      const miqdor = son($('miqdor').value), narx = son($('narx').value);
+      $('summa').value = (miqdor > 0 && narx > 0) ? pul(miqdor * narx) : '';
+    }
+
+    // ---------- Saqlash ----------
+    $('forma').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const xato = $('xato');
+      xato.textContent = '';
+
+      if (!mijoz) { xato.textContent = 'Mijozni ro\'yxatdan tanlang'; qidir.focus(); return; }
+
+      const yozuv = { sana: $('sana').value, mijoz_id: mijoz.id, turi, izoh: $('izoh').value.trim() || null };
+      const summa = son($('summa').value);
+
+      if (MAHSULOTLI.includes(turi)) {
+        const m = mahsulotlar.find(x => x.id == $('mahsulot').value);
+        const miqdor = son($('miqdor').value), narx = son($('narx').value);
+        if (!m) { xato.textContent = 'Mahsulotni tanlang'; return; }
+        if (!(miqdor > 0)) { xato.textContent = 'Miqdorni to\'g\'ri yozing'; return; }
+        if (Number.isNaN(narx) || narx < 0) { xato.textContent = 'Narxni to\'g\'ri yozing'; return; }
+        Object.assign(yozuv, {
+          mahsulot_id: m.id, olchov: m.olchov, miqdor, narx,
+          avto_raqami: $('avto').value.trim() || null,
+        });
+      }
+      if (!(summa > 0)) { xato.textContent = 'Summani to\'g\'ri yozing'; return; }
+      yozuv.summa = summa;   // belgini (+/−) baza o'zi qo'yadi
+
+      const tugma = $('saqla');
+      tugma.disabled = true;
+      tugma.textContent = 'Saqlanmoqda...';
+      const { error } = await db.from('yozuvlar').insert(yozuv);
+      tugma.disabled = false;
+      tugma.textContent = 'Saqlash';
+      if (error) { xato.textContent = 'Saqlanmadi: ' + error.message; return; }
+
+      // Mahsulotning oxirgi narxini yangilab qo'yamiz (keyingi safar o'zi chiqadi)
+      if (yozuv.mahsulot_id && yozuv.narx) {
+        const m = mahsulotlar.find(x => x.id === yozuv.mahsulot_id);
+        if (m.oxirgi_narx != yozuv.narx) {
+          m.oxirgi_narx = yozuv.narx;
+          await db.from('mahsulotlar').update({ oxirgi_narx: yozuv.narx }).eq('id', m.id);
+        }
+      }
+
+      // Yangi qoldiqni bazadan olamiz
+      const { data: q } = await db.from('mijoz_qoldiq').select('qoldiq').eq('id', mijoz.id).single();
+      const qoldiq = Number(q?.qoldiq ?? 0);
+      mijoz.qoldiq = qoldiq;
+      $('yangiQoldiq').textContent = mijoz.nomi + ': ' + pul(qoldiq) + ' so\'m';
+      $('yangiIzoh').textContent =
+        qoldiq > 0 ? 'Mijoz bizdan qarz' : qoldiq < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
+      $('sverkaga').href = 'sverka.html?mijoz=' + encodeURIComponent(mijoz.id);
+      $('forma').hidden = true;
+      $('tayyor').hidden = false;
+    });
+
+    // ---------- Yana yozuv: sana va mijoz qoladi, qolgani tozalanadi ----------
+    $('yana').addEventListener('click', () => {
+      ['miqdor', 'narx', 'summa', 'avto', 'izoh'].forEach(id => $(id).value = '');
+      $('mahsulot').value = '';
+      $('olchov').textContent = '';
+      summaQolda = false;
+      if (mijoz) mijozTanla(mijoz);
+      $('tayyor').hidden = true;
+      $('forma').hidden = false;
+    });
+
+    // ---------- Boshlang'ich holat ----------
+    $('sana').value = bugun();
+    turTanla('yuk_berildi');
+    const url = new URLSearchParams(location.search);
+    const oldin = mijozlar.find(m => m.id == url.get('mijoz'));
+    if (oldin) mijozTanla(oldin);
+  </script>
+</body>
+</html>

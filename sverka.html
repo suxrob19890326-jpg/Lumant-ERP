@@ -27,6 +27,7 @@
         <b id="qoldiq"></b>
         <small id="izohQoldiq"></small>
       </div>
+      <a id="yozuvga" class="tugma-ikkinchi" href="yozuv.html">➕ Yozuv qo'shish</a>
       <p class="soni"><span id="soni"></span> ta yozuv</p>
       <div id="qatorlar"></div>
     </div>
@@ -115,8 +116,13 @@
       document.getElementById('izohQoldiq').textContent =
         qoldiq > 0 ? 'Mijoz bizdan qarz' : qoldiq < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
       document.getElementById('soni').textContent = yozuvlar.length;
+      document.getElementById('yozuvga').href = 'yozuv.html?mijoz=' + encodeURIComponent(mijoz.id);
       document.getElementById('natija').hidden = false;
     }
+
+    // 4) Havolada ?mijoz=ID bo'lsa, o'sha mijozni darhol ochamiz
+    const oldin = mijozlar.find(m => m.id == new URLSearchParams(location.search).get('mijoz'));
+    if (oldin) { qidir.value = oldin.nomi; korsat(oldin); }
   </script>
 </body>
 </html>
