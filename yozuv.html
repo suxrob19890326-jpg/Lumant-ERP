@@ -243,7 +243,15 @@
       const tugma = $('saqla');
       tugma.disabled = true;
       tugma.textContent = 'Saqlanmoqda...';
-      const { error } = await db.from('yozuvlar').insert(yozuv);
+      let { error } = await db.from('yozuvlar').insert(yozuv);
+      // Bazada kassa hali sozlanmagan bo'lsa (03_kassa.sql ishga tushirilmagan) — kassasiz saqlaymiz
+      let kassasiz = false;
+      if (error && yozuv.kassa && /kassa/i.test(error.message) &&
+          (error.code === 'PGRST204' || error.code === '42703' || /column|does not exist/i.test(error.message))) {
+        delete yozuv.kassa;
+        kassasiz = true;
+        ({ error } = await db.from('yozuvlar').insert(yozuv));
+      }
       tugma.disabled = false;
       tugma.textContent = 'Saqlash';
       if (error) { xato.textContent = 'Saqlanmadi: ' + error.message; return; }
@@ -263,7 +271,8 @@
       mijoz.qoldiq = qoldiq;
       $('yangiQoldiq').textContent = mijoz.nomi + ': ' + pul(qoldiq) + ' so\'m';
       $('yangiIzoh').textContent =
-        qoldiq > 0 ? 'Mijoz bizdan qarz' : qoldiq < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
+        (qoldiq > 0 ? 'Mijoz bizdan qarz' : qoldiq < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq') +
+        (kassasiz ? ' · Kassa hali sozlanmagan, kassaga tushmadi' : '');
       $('sverkaga').href = 'sverka.html?mijoz=' + encodeURIComponent(mijoz.id);
       $('forma').hidden = true;
       $('tayyor').hidden = false;
