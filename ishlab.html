@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<!-- Ishlab chiqarish: tayyor mahsulot → omborga, xomashyo sarfi → ombordan, retsept bo'yicha -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ishlab chiqarish · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase kutubxonasi: bitta fayl, o'zimizning saytdan (tez yuklanadi) -->
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Ishlab chiqarish</h1>
+  </header>
+
+  <form id="forma" class="panel" autocomplete="off" onsubmit="event.preventDefault()">
+    <label>Sana <input id="sana" type="date" required></label>
+
+    <label>Mahsulot
+      <input id="qidir" placeholder="Nima ishlab chiqarildi? (М 200, Пк 59/12...)">
+    </label>
+    <ul id="takliflar" class="takliflar" hidden></ul>
+
+    <label>Miqdor <span id="olchov" class="soni"></span>
+      <input id="miqdor" inputmode="decimal" placeholder="0">
+    </label>
+
+    <h2 class="kichik-sarlavha">Xomashyo sarfi</h2>
+    <p id="retseptHolat" class="tushuntir">Avval mahsulotni tanlang</p>
+    <div id="sarflar"></div>
+    <button type="button" id="qoshish" class="tugma-oddiy">➕ Xomashyo qo'shish</button>
+    <label class="belgi"><input type="checkbox" id="retsept"> Shu nisbatni retsept sifatida saqlash</label>
+
+    <label>Izoh <input id="izoh" placeholder="ixtiyoriy (smena, usta...)"></label>
+    <button type="submit" id="saqla">Saqlash</button>
+    <p id="xato" class="xato">Ma'lumotlar yuklanmoqda...</p>
+  </form>
+
+  <section class="panel">
+    <div class="kun">
+      <button type="button" id="oldingi" aria-label="Oldingi kun">‹</button>
+      <input id="kun" type="date">
+      <button type="button" id="keyingi" aria-label="Keyingi kun">›</button>
+    </div>
+    <div id="royxat"></div>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, pul, toza } from './db.js';
+
+    await loginShart();
+
+    const $ = (id) => document.getElementById(id);
+    function son(s) {
+      const t = String(s).replace(/\s/g, '').replace(',', '.');
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    const yaxlit = (n) => Math.round(n * 1000) / 1000;
+    const bugun = () => new Date().toLocaleDateString('sv-SE');
+    function kunQosh(s, n) {
+      const d = new Date(s + 'T12:00:00');
+      d.setDate(d.getDate() + n);
+      return d.toLocaleDateString('sv-SE');
+    }
+
+    // ---------- Ma'lumot ----------
+    let mahsulotlar = [], retseptlar = [];
+    async function yuklaRetsept() {
+      const { data, error } = await db.from('retseptlar').select('mahsulot_id, xomashyo_id, miqdor');
+      if (error) throw error;
+      retseptlar = data;
+    }
+    try {
+      const [m] = await Promise.all([
+        db.from('mahsulotlar').select('id, nomi, olchov, turkum').order('nomi'),
+        yuklaRetsept(),
+      ]);
+      if (m.error) throw m.error;
+      mahsulotlar = m.data;
+    } catch (e) {
+      $('xato').textContent = /retseptlar|ishlab|schema cache|does not exist|turkum/i.test(e.message)
+        ? 'Ishlab chiqarish jadvali hali bazada yo\'q: supabase/06_ishlab_chiqarish.sql ni ishga tushiring.'
+        : 'Xato: ' + e.message;
+      throw e;
+    }
+    $('xato').textContent = '';
+    const nomi = (id) => mahsulotlar.find(m => m.id == id);
+
+    // Xomashyo tanlovi: avval xomashyolar, keyin qolganlari
+    const xomOptions = '<option value="">— xomashyo —</option>' +
+      '<optgroup label="Xomashyo">' + mahsulotlar.filter(m => m.turkum === 'xomashyo')
+        .map(m => `<option value="${toza(m.id)}">${toza(m.nomi)}</option>`).join('') + '</optgroup>' +
+      '<optgroup label="Boshqalar">' + mahsulotlar.filter(m => m.turkum !== 'xomashyo')
+        .map(m => `<option value="${toza(m.id)}">${toza(m.nomi)}</option>`).join('') + '</optgroup>';
+
+    // ---------- Mahsulot qidiruvi ----------
+    let mahsulot = null;
+    const qidir = $('qidir'), takliflar = $('takliflar');
+    qidir.addEventListener('input', () => {
+      mahsulot = null;
+      const soz = qidir.value.trim().toLowerCase();
+      if (!soz) { takliflar.hidden = true; return; }
+      const mos = mahsulotlar.filter(m => m.nomi.toLowerCase().includes(soz))
+        .sort((a, b) => (b.turkum === 'tayyor') - (a.turkum === 'tayyor')).slice(0, 15);
+      takliflar.innerHTML = mos.map(m =>
+        `<li data-id="${toza(m.id)}"><span>${toza(m.nomi)}</span><small>${
+          retseptlar.some(r => r.mahsulot_id === m.id) ? '📋 retsept' : toza(m.olchov)}</small></li>`
+      ).join('') || '<li class="bosh">Topilmadi</li>';
+      takliflar.hidden = false;
+    });
+    takliflar.addEventListener('click', (e) => {
+      const li = e.target.closest('li[data-id]');
+      if (li) mahsulotTanla(nomi(li.dataset.id));
+    });
+
+    function mahsulotTanla(m) {
+      mahsulot = m;
+      qidir.value = m.nomi;
+      takliflar.hidden = true;
+      $('olchov').textContent = m.olchov ? `(${m.olchov})` : '';
+      $('sarflar').innerHTML = '';
+      const ret = retseptlar.filter(r => r.mahsulot_id === m.id);
+      ret.forEach(r => qator(r.xomashyo_id, Number(r.miqdor)));
+      if (!ret.length) qator();
+      $('retsept').checked = !ret.length;
+      $('retseptHolat').textContent = ret.length
+        ? `📋 Retsept bo'yicha o'zi hisoblanadi (1 ${m.olchov || 'birlik'} uchun). Kerak bo'lsa o'zgartiring.`
+        : 'Retsept yo\'q — sarflangan xomashyoni yozing. "Retsept sifatida saqlash" belgilansa, keyingi safar o\'zi hisoblanadi.';
+      hisobla();
+    }
+
+    // ---------- Sarf qatorlari ----------
+    function qator(xomId = '', birlik = null) {
+      const div = document.createElement('div');
+      div.className = 'sarf';
+      div.innerHTML = `<select>${xomOptions}</select>
+        <input inputmode="decimal" placeholder="0"><span class="soni"></span>
+        <button type="button" class="ochir" aria-label="O'chirish">✕</button>`;
+      const [sel, inp, ol] = [div.querySelector('select'), div.querySelector('input'), div.querySelector('span')];
+      sel.value = xomId;
+      ol.textContent = nomi(xomId)?.olchov || '';
+      if (birlik !== null) div.dataset.birlik = birlik;   // retseptdan: 1 birlik uchun
+      sel.addEventListener('change', () => { ol.textContent = nomi(sel.value)?.olchov || ''; });
+      inp.addEventListener('input', () => { delete div.dataset.birlik; });   // qo'lda o'zgartirildi
+      div.querySelector('.ochir').addEventListener('click', () => div.remove());
+      $('sarflar').append(div);
+      return div;
+    }
+    $('qoshish').addEventListener('click', () => qator().querySelector('select').focus());
+
+    function hisobla() {
+      const n = son($('miqdor').value);
+      document.querySelectorAll('#sarflar .sarf[data-birlik]').forEach(div => {
+        div.querySelector('input').value = n > 0 ? pul(yaxlit(Number(div.dataset.birlik) * n)) : '';
+      });
+    }
+    $('miqdor').addEventListener('input', hisobla);
+
+    // ---------- Saqlash ----------
+    $('forma').addEventListener('submit', async () => {
+      const xato = $('xato');
+      xato.textContent = '';
+      xato.classList.remove('ok');
+      if (!mahsulot) { xato.textContent = 'Mahsulotni ro\'yxatdan tanlang'; qidir.focus(); return; }
+      const miqdor = son($('miqdor').value);
+      if (!(miqdor > 0)) { xato.textContent = 'Miqdorni to\'g\'ri yozing'; $('miqdor').focus(); return; }
+      const sana = $('sana').value;
+      if (!sana) { xato.textContent = 'Sanani tanlang'; return; }
+
+      const sarflar = [];
+      for (const div of document.querySelectorAll('#sarflar .sarf')) {
+        const id = div.querySelector('select').value;
+        const n = son(div.querySelector('input').value);
+        if (!id && n === null) continue;                       // bo'sh qator
+        if (!id) { xato.textContent = 'Xomashyoni tanlang (yoki qatorni ✕ bilan o\'chiring)'; return; }
+        if (id == mahsulot.id) { xato.textContent = 'Mahsulot o\'ziga xomashyo bo\'la olmaydi'; return; }
+        if (!(n > 0)) { xato.textContent = `"${nomi(id).nomi}" miqdorini to'g'ri yozing`; return; }
+        sarflar.push({ xomashyo_id: Number(id), miqdor: n });
+      }
+
+      const tugma = $('saqla');
+      tugma.disabled = true;
+      tugma.textContent = 'Saqlanmoqda...';
+      const { error } = await db.rpc('ishlab_kirit', {
+        p_sana: sana, p_mahsulot_id: mahsulot.id, p_miqdor: miqdor,
+        p_izoh: $('izoh').value.trim() || null, p_sarflar: sarflar, p_retsept: $('retsept').checked,
+      });
+      tugma.disabled = false;
+      tugma.textContent = 'Saqlash';
+      if (error) { xato.textContent = 'Saqlanmadi: ' + error.message; return; }
+
+      xato.textContent = `✅ Saqlandi: ${mahsulot.nomi} +${pul(miqdor)} ${mahsulot.olchov || ''}` +
+        (sarflar.length ? `, ${sarflar.length} xil xomashyo ombordan chiqarildi` : '');
+      xato.classList.add('ok');
+      $('miqdor').value = '';
+      $('izoh').value = '';
+      await yuklaRetsept();
+      mahsulotTanla(mahsulot);   // yangilangan retsept bilan
+      kunTanla(sana);
+    });
+
+    // ---------- Kunlik ro'yxat ----------
+    let soralgan = 0;
+    async function royxat() {
+      const men = ++soralgan;
+      $('royxat').innerHTML = '<p class="soni">Yuklanmoqda...</p>';
+      const { data, error } = await db.from('ishlab_royxat')
+        .select('id, nomi, olchov, miqdor, izoh, sarflar')
+        .eq('sana', $('kun').value).order('id', { ascending: false });
+      if (men !== soralgan) return;
+      if (error) { $('royxat').innerHTML = `<p class="xato">Xato: ${toza(error.message)}</p>`; return; }
+      $('royxat').innerHTML = data.map(r => {
+        const sarf = (r.sarflar || []).map(s => `${toza(s.nomi)} ${pul(s.miqdor)} ${toza(s.olchov)}`).join(' · ');
+        const pastki = [sarf, toza(r.izoh)].filter(Boolean).join(' · ');
+        return `<div class="yozuv kirim">
+          <div class="yuqori">
+            <span class="nomi">🏭 ${toza(r.nomi)}</span>
+            <span class="summa">+${pul(r.miqdor)} <small>${toza(r.olchov)}</small></span>
+          </div>
+          ${pastki ? `<div class="pastki"><span>${pastki}</span></div>` : ''}
+        </div>`;
+      }).join('') || '<p class="soni">Bu kunda ishlab chiqarish yozilmagan</p>';
+    }
+    function kunTanla(s) {
+      $('kun').value = s;
+      $('keyingi').disabled = s >= bugun();
+      royxat();
+    }
+    $('kun').addEventListener('change', () => kunTanla($('kun').value || bugun()));
+    $('oldingi').addEventListener('click', () => kunTanla(kunQosh($('kun').value, -1)));
+    $('keyingi').addEventListener('click', () => kunTanla(kunQosh($('kun').value, 1)));
+
+    // ---------- Boshlang'ich holat ----------
+    $('sana').value = bugun();
+    kunTanla(bugun());
+  </script>
+</body>
+</html>

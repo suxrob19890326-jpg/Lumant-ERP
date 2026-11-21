@@ -163,3 +163,13 @@ button:disabled { opacity: 0.6; }
 .xato.ok { color: #1e8449; }
 .panel > p.xato:last-child { margin: 6px 0 0; }
 .panel > p.xato:last-child:empty { min-height: 0; }
+
+/* ---------- Ishlab chiqarish ---------- */
+.sarf { display: grid; grid-template-columns: 1fr 88px auto 40px; gap: 6px; align-items: center; margin-bottom: 8px; }
+.sarf select, .sarf input { margin: 0; min-width: 0; }
+.sarf .soni { font-size: 13px; min-width: 24px; }
+.sarf .ochir { margin: 0; padding: 10px 0; background: #f6f2ee; color: #8a6a50; }
+.tugma-oddiy { background: white; color: #E8731A; border: 1px dashed #E8731A; }
+
+/* Menyu kartochkalari cho'zilib ketmasin */
+main { align-content: start; }
