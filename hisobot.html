@@ -32,7 +32,7 @@
       </a>
       <a class="korsatkich" href="#bizqarz">
         <span>Biz qarzmiz / avanslar</span>
-        <b id="k_kreditor" class="manfiy">…</b>
+        <b id="k_kreditor">…</b>
         <small id="k_kreditorSoni"></small>
       </a>
       <a class="korsatkich" href="kassa.html">
@@ -105,6 +105,7 @@
     $('k_debitor').textContent = pul(jami(qarzdor));
     $('k_debitorSoni').textContent = qarzdor.length + ' ta mijoz';
     $('k_kreditor').textContent = pul(-jami(biz));
+    $('k_kreditor').classList.toggle('manfiy', biz.length > 0);
     $('k_kreditorSoni').textContent = biz.length + ' ta';
 
     const kq = await db.from('kassa_qoldiq').select('kassa, qoldiq');
