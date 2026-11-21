@@ -1,5 +1,5 @@
 // Barcha sahifalar uchun umumiy: bazaga ulanish va login tekshiruvi.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 export const db = createClient(SUPABASE_URL, SUPABASE_KEY);

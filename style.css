@@ -1,5 +1,8 @@
 /* Bu CSS fayl: sahifaning "kiyimi" - ranglar, o'lchamlar, joylashuv. */
 
+/* "hidden" berilgan element har doim yashirin bo'lsin */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -93,3 +96,21 @@ th, td { padding: 8px 6px; border-bottom: 1px solid #eee3da; text-align: left; w
 th { background: #f6f2ee; position: sticky; top: 0; }
 td.raqam { text-align: right; }
 tr.minus td.raqam:first-of-type { color: #1e8449; }
+
+/* ---------- Tez qidiruv ro'yxati ---------- */
+.takliflar { list-style: none; margin: -6px 0 10px; padding: 0; border: 1px solid #eee3da; border-radius: 10px; max-height: 50vh; overflow-y: auto; }
+.takliflar li { display: flex; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #f3ebe4; cursor: pointer; }
+.takliflar li:active { background: #fbefe4; }
+.takliflar li small { color: #8a6a50; white-space: nowrap; }
+.takliflar li.bosh { color: #8a6a50; cursor: default; }
+
+/* ---------- Sverka qatorlari (telefonga mos kartochkalar) ---------- */
+.yozuv { padding: 10px 2px; border-bottom: 1px solid #eee3da; }
+.yozuv .yuqori, .yozuv .pastki { display: flex; gap: 8px; align-items: baseline; }
+.yozuv .sana { color: #8a6a50; font-size: 13px; white-space: nowrap; }
+.yozuv .nomi { flex: 1; font-weight: 600; }
+.yozuv .summa { font-weight: 600; white-space: nowrap; }
+.yozuv.minus .summa { color: #1e8449; }
+.yozuv .pastki { font-size: 13px; color: #8a6a50; margin-top: 2px; }
+.yozuv .pastki span:first-child { flex: 1; }
+.yozuv .q { white-space: nowrap; color: #5A2E0E; font-weight: 600; }

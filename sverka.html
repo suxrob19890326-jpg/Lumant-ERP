@@ -16,27 +16,19 @@
   </header>
 
   <section class="panel">
-    <input id="qidir" list="mijozlar" placeholder="Mijoz nomini yozing..." autocomplete="off">
-    <datalist id="mijozlar"></datalist>
+    <!-- Qidiruv: yozganingiz sari mos mijozlar pastda chiqadi -->
+    <input id="qidir" placeholder="Mijoz nomini yozing..." autocomplete="off">
+    <ul id="takliflar" class="takliflar" hidden></ul>
+    <p id="holat" class="soni">Mijozlar yuklanmoqda...</p>
 
     <div id="natija" hidden>
       <div class="qoldiq">
-        <span>Jami qoldiq</span>
+        <span id="mijozNomi"></span>
         <b id="qoldiq"></b>
         <small id="izohQoldiq"></small>
       </div>
       <p class="soni"><span id="soni"></span> ta yozuv</p>
-      <div class="jadval-oyna">
-        <table>
-          <thead>
-            <tr>
-              <th>Sana</th><th>Mahsulot</th><th>Miqdor</th><th>Narx</th>
-              <th>Summa</th><th>Qoldiq</th><th>Avto</th><th>Izoh</th>
-            </tr>
-          </thead>
-          <tbody id="qatorlar"></tbody>
-        </table>
-      </div>
+      <div id="qatorlar"></div>
     </div>
   </section>
 
@@ -45,47 +37,86 @@
 
     await loginShart();
 
-    // 1) Mijozlar ro'yxatini yuklash (qidiruv uchun)
+    // Yozuv turlarining ko'rinishi
+    const TUR = {
+      yuk_berildi:     '',
+      mahsulot_olindi: '⬇️ ',
+      tolov_keldi:     '💵 To\'lov',
+      pul_berildi:     '💸 Pul berildi',
+      tuzatish:        '✏️ Tuzatish',
+    };
+
+    // 1) Mijozlar ro'yxatini bir marta yuklab olamiz
+    const holat = document.getElementById('holat');
     const { data: mijozlar, error } = await db
       .from('mijoz_qoldiq').select('id, nomi, qoldiq').order('nomi');
-    if (error) alert('Xato: ' + error.message);
+    if (error) { holat.textContent = 'Xato: ' + error.message; throw error; }
+    holat.textContent = mijozlar.length + ' ta mijoz';
 
-    const royxat = document.getElementById('mijozlar');
-    royxat.innerHTML = mijozlar.map(m => `<option value="${m.nomi}">`).join('');
+    // 2) Tez qidiruv
+    const qidir = document.getElementById('qidir');
+    const takliflar = document.getElementById('takliflar');
 
-    // 2) Mijoz tanlanganda sverkani ko'rsatish
-    document.getElementById('qidir').addEventListener('change', async (e) => {
-      const mijoz = mijozlar.find(m => m.nomi === e.target.value.trim());
-      if (!mijoz) return;
+    qidir.addEventListener('input', () => {
+      const soz = qidir.value.trim().toLowerCase();
+      if (!soz) { takliflar.hidden = true; return; }
+      const mos = mijozlar.filter(m => m.nomi.toLowerCase().includes(soz)).slice(0, 15);
+      takliflar.innerHTML = mos.map(m =>
+        `<li data-id="${m.id}"><span>${m.nomi}</span><small>${pul(m.qoldiq)}</small></li>`
+      ).join('') || '<li class="bosh">Topilmadi</li>';
+      takliflar.hidden = false;
+    });
 
-      const { data: yozuvlar } = await db
+    takliflar.addEventListener('click', (e) => {
+      const li = e.target.closest('li[data-id]');
+      if (!li) return;
+      const mijoz = mijozlar.find(m => m.id == li.dataset.id);
+      qidir.value = mijoz.nomi;
+      takliflar.hidden = true;
+      qidir.blur();
+      korsat(mijoz);
+    });
+
+    // 3) Tanlangan mijozning sverkasi
+    async function korsat(mijoz) {
+      holat.textContent = 'Yuklanmoqda...';
+      const { data: yozuvlar, error } = await db
         .from('yozuvlar')
-        .select('sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
+        .select('id, sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
         .eq('mijoz_id', mijoz.id)
         .order('sana').order('id');
+      if (error) { holat.textContent = 'Xato: ' + error.message; return; }
+      holat.textContent = '';
 
       let qoldiq = 0;
       document.getElementById('qatorlar').innerHTML = yozuvlar.map(y => {
         qoldiq += Number(y.summa || 0);
-        const nomi = y.mahsulotlar?.nomi || '';
-        return `<tr class="${y.summa < 0 ? 'minus' : ''}">
-          <td>${sana(y.sana)}</td>
-          <td>${nomi} ${y.qulf ? '🔒' : ''}</td>
-          <td>${y.miqdor ? pul(y.miqdor) + ' ' + (y.olchov || '') : ''}</td>
-          <td>${pul(y.narx)}</td>
-          <td class="raqam">${pul(y.summa)}</td>
-          <td class="raqam"><b>${pul(qoldiq)}</b></td>
-          <td>${y.avto_raqami || ''}</td>
-          <td>${y.izoh || ''}</td>
-        </tr>`;
+        const nomi = (TUR[y.turi] || '') + (y.mahsulotlar?.nomi || '');
+        const tafsilot = [
+          y.miqdor ? `${pul(y.miqdor)} ${y.olchov || ''}` + (y.narx ? ` × ${pul(y.narx)}` : '') : '',
+          y.avto_raqami ? `🚚 ${y.avto_raqami}` : '',
+          y.izoh || '',
+        ].filter(Boolean).join(' · ');
+        return `<div class="yozuv ${y.summa < 0 ? 'minus' : ''}">
+          <div class="yuqori">
+            <span class="sana">${sana(y.sana)}</span>
+            <span class="nomi">${nomi} ${y.qulf ? '🔒' : ''}</span>
+            <span class="summa">${pul(y.summa)}</span>
+          </div>
+          <div class="pastki">
+            <span>${tafsilot}</span>
+            <span class="q">${pul(qoldiq)}</span>
+          </div>
+        </div>`;
       }).join('');
 
+      document.getElementById('mijozNomi').textContent = mijoz.nomi;
       document.getElementById('qoldiq').textContent = pul(qoldiq) + ' so\'m';
       document.getElementById('izohQoldiq').textContent =
         qoldiq > 0 ? 'Mijoz bizdan qarz' : qoldiq < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
       document.getElementById('soni').textContent = yozuvlar.length;
       document.getElementById('natija').hidden = false;
-    });
+    }
   </script>
 </body>
 </html>
