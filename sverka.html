@@ -33,7 +33,7 @@
   </section>
 
   <script type="module">
-    import { db, loginShart, pul, sana } from './db.js';
+    import { db, loginShart, pul, sana, toza } from './db.js';
 
     await loginShart();
 
@@ -62,7 +62,7 @@
       if (!soz) { takliflar.hidden = true; return; }
       const mos = mijozlar.filter(m => m.nomi.toLowerCase().includes(soz)).slice(0, 15);
       takliflar.innerHTML = mos.map(m =>
-        `<li data-id="${m.id}"><span>${m.nomi}</span><small>${pul(m.qoldiq)}</small></li>`
+        `<li data-id="${toza(m.id)}"><span>${toza(m.nomi)}</span><small>${pul(m.qoldiq)}</small></li>`
       ).join('') || '<li class="bosh">Topilmadi</li>';
       takliflar.hidden = false;
     });
@@ -91,11 +91,11 @@
       let qoldiq = 0;
       document.getElementById('qatorlar').innerHTML = yozuvlar.map(y => {
         qoldiq += Number(y.summa || 0);
-        const nomi = (TUR[y.turi] || '') + (y.mahsulotlar?.nomi || '');
+        const nomi = (TUR[y.turi] || '') + toza(y.mahsulotlar?.nomi);
         const tafsilot = [
-          y.miqdor ? `${pul(y.miqdor)} ${y.olchov || ''}` + (y.narx ? ` × ${pul(y.narx)}` : '') : '',
-          y.avto_raqami ? `🚚 ${y.avto_raqami}` : '',
-          y.izoh || '',
+          y.miqdor ? `${pul(y.miqdor)} ${toza(y.olchov)}` + (y.narx ? ` × ${pul(y.narx)}` : '') : '',
+          y.avto_raqami ? `🚚 ${toza(y.avto_raqami)}` : '',
+          toza(y.izoh),
         ].filter(Boolean).join(' · ');
         return `<div class="yozuv ${y.summa < 0 ? 'minus' : ''}">
           <div class="yuqori">

@@ -26,3 +26,9 @@ export function sana(s) {
   const [y, m, d] = s.split('-');
   return `${d}.${m}.${y}`;
 }
+
+// Bazadan kelgan matnni HTML'ga xavfsiz qo'yish uchun: "<b>" → "&lt;b&gt;"
+export function toza(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
