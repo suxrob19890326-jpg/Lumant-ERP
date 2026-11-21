@@ -1,7 +1,9 @@
 // Barcha sahifalar uchun umumiy: bazaga ulanish va login tekshiruvi.
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
+// Kutubxona sahifadagi <script src="vendor/supabase-..."> orqali yuklanadi.
+// Versiyani yangilash: vendor/ ga yangi faylni qo'yib, 3 ta sahifadagi nomini almashtiring.
+const { createClient } = window.supabase;
 export const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Login qilinmagan bo'lsa, bosh sahifaga (login formasiga) qaytaradi
