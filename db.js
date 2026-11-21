@@ -16,6 +16,9 @@ export async function loginShart() {
   return data.session.user;
 }
 
+// Lotin ↔ kirill qidiruv (qidiruv.js)
+export { kalit, mos, saralash } from './qidiruv.js';
+
 // 1250000 → "1 250 000"
 export function pul(n) {
   if (n === null || n === undefined || n === '') return '';

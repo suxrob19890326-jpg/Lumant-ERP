@@ -14,6 +14,7 @@
   <script src="vendor/supabase-2.119.2.js" defer></script>
   <link rel="modulepreload" href="db.js">
   <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
 </head>
 <body>
   <header class="kichik">
@@ -89,7 +90,7 @@
   </section>
 
   <script type="module">
-    import { db, loginShart, pul, toza } from './db.js';
+    import { db, loginShart, pul, toza, kalit, mos, saralash } from './db.js';
 
     await loginShart();
 
@@ -171,11 +172,12 @@
     qidir.addEventListener('input', () => {
       mijoz = null;
       $('mijozHolat').textContent = '';
-      const soz = qidir.value.trim().toLowerCase();
+      const soz = qidir.value.trim();
       if (!soz) { takliflar.hidden = true; return; }
-      const mos = mijozlar.filter(m => m.nomi.toLowerCase().includes(soz)).slice(0, 15);
-      const aniq = mijozlar.some(m => m.nomi.toLowerCase() === soz);
-      takliflar.innerHTML = mos.map(m =>
+      const topildi = saralash(mijozlar.filter(m => mos(m.nomi, soz)), soz).slice(0, 15);
+      // lotin/kirillda bir xil nomli mijoz bo'lsa — yangisini taklif qilmaymiz (takror bo'lmasin)
+      const aniq = mijozlar.some(m => kalit(m.nomi) === kalit(soz));
+      takliflar.innerHTML = topildi.map(m =>
         `<li data-id="${toza(m.id)}"><span>${toza(m.nomi)}</span><small>${pul(m.qoldiq)}</small></li>`
       ).join('') + (aniq ? '' : `<li data-yangi="1">➕ Yangi mijoz: <b>${toza(qidir.value.trim())}</b></li>`);
       takliflar.hidden = false;

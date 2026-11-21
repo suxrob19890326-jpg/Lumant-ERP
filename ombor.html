@@ -14,6 +14,7 @@
   <script src="vendor/supabase-2.119.2.js" defer></script>
   <link rel="modulepreload" href="db.js">
   <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
 </head>
 <body>
   <header class="kichik">
@@ -74,7 +75,7 @@
   </section>
 
   <script type="module">
-    import { db, loginShart, pul, sana as sanaKor, toza } from './db.js';
+    import { db, loginShart, pul, sana as sanaKor, toza, mos, saralash } from './db.js';
 
     await loginShart();
 
@@ -129,10 +130,10 @@
     $('hammasi').addEventListener('change', chiz);
 
     function chiz() {
-      const soz = $('qidir').value.trim().toLowerCase();
+      const soz = $('qidir').value.trim();
       let r;
       if (soz) {
-        r = mahsulotlar.filter(m => m.nomi.toLowerCase().includes(soz));   // qidiruv hamma turkumdan
+        r = saralash(mahsulotlar.filter(m => mos(m.nomi, soz)), soz);   // qidiruv hamma turkumdan
       } else {
         r = mahsulotlar.filter(m => (m.turkum || 'boshqa') === tab);
         if (!$('hammasi').checked) r = r.filter(m => m.harakatlar > 0);
