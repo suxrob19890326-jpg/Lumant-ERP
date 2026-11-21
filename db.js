@@ -6,18 +6,58 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 const { createClient } = window.supabase;
 export const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Login qilinmagan bo'lsa, bosh sahifaga (login formasiga) qaytaradi
-export async function loginShart() {
+// ---------- Rollar ----------
+// Qaysi sahifa qaysi rollarga ochiq (bazadagi RLS qoidalari bilan bir xil)
+export const SAHIFA_ROLLAR = {
+  yozuv:       ['admin', 'rahbar', 'sotuvchi', 'kassir'],
+  sverka:      ['admin', 'rahbar', 'sotuvchi', 'kassir'],
+  kassa:       ['admin', 'rahbar', 'kassir'],
+  ombor:       ['admin', 'rahbar', 'omborchi', 'sotuvchi'],
+  ishlab:      ['admin', 'rahbar', 'omborchi'],
+  hisobot:     ['admin', 'rahbar'],
+  spravochnik: ['admin', 'rahbar', 'sotuvchi', 'kassir', 'omborchi'],
+  xodimlar:    ['admin', 'rahbar'],
+  tarix:       ['admin', 'rahbar'],
+};
+export const ROL_NOMI = {
+  admin: 'Admin', rahbar: 'Rahbar', sotuvchi: 'Sotuvchi', kassir: 'Kassir', omborchi: 'Omborchi',
+};
+
+// Joriy foydalanuvchining roli. 07_rollar_tarix.sql hali ishga tushirilmagan bo'lsa —
+// avvalgidek hamma narsaga ruxsat ('admin'). Rol berilmagan / o'chirilgan bo'lsa — null.
+let rolKesh;
+export async function rolim(user) {
+  if (rolKesh !== undefined) return rolKesh;
+  const { data, error } = await db.from('xodimlar').select('rol, faol').eq('user_id', user.id).maybeSingle();
+  if (error) rolKesh = /xodimlar|schema cache|does not exist/i.test(error.message) ? 'admin' : null;
+  else rolKesh = data && data.faol ? data.rol : null;
+  return rolKesh;
+}
+export const ruxsat = (rol, sahifa) => !!rol && (SAHIFA_ROLLAR[sahifa] || []).includes(rol);
+
+// Login qilinmagan bo'lsa — bosh sahifaga; sahifaga ruxsat bo'lmasa — xabar.
+// Qaytaradi: foydalanuvchi (user.rol bilan).
+export async function loginShart(sahifa) {
   const { data } = await db.auth.getSession();
   if (!data.session) {
     location.replace('index.html');
     return new Promise(() => {});   // sahifa kodi shu yerda to'xtaydi
   }
-  return data.session.user;
+  const user = data.session.user;
+  user.rol = await rolim(user);
+  if (sahifa && !ruxsat(user.rol, sahifa)) {
+    document.body.innerHTML = `<header class="kichik"><a href="index.html" class="orqaga">‹ Menyu</a><h1>Ruxsat yo'q</h1></header>
+      <section class="panel"><p>${user.rol
+        ? 'Bu bo\'limga sizning rolingiz (' + (ROL_NOMI[user.rol] || user.rol) + ') bilan kirib bo\'lmaydi.'
+        : 'Sizga hali rol berilmagan. Admin\'ga murojaat qiling.'}</p>
+      <a class="tugma-ikkinchi" href="index.html">Menyuga qaytish</a></section>`;
+    return new Promise(() => {});
+  }
+  return user;
 }
 
 // Lotin ↔ kirill qidiruv (qidiruv.js)
-export { kalit, mos, saralash } from './qidiruv.js';
+export { kalit, mos, saralash, oxshashJuftlar } from './qidiruv.js';
 
 // 1250000 → "1 250 000"
 export function pul(n) {

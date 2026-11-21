@@ -77,7 +77,7 @@
   <script type="module">
     import { db, loginShart, pul, sana as sanaKor, toza, mos, saralash } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('ombor');
 
     const $ = (id) => document.getElementById(id);
     const SABAB = {

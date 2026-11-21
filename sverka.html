@@ -94,7 +94,7 @@
   <script type="module">
     import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('sverka');
     const $ = (id) => document.getElementById(id);
 
     // Yozuv turlarining ko'rinishi
@@ -324,6 +324,7 @@
       $('tQulf').hidden = !y.qulf;
       $('tMaydon').disabled = !!y.qulf;
       $('tMaydon').hidden = !!y.qulf;
+      $('tQulfla').hidden = !['admin', 'rahbar'].includes(user.rol);   // qulflash — faqat admin/rahbar
       $('tSana').value = y.sana;
       $('tMiqdorQism').hidden = !y.mahsulot_id && !y.miqdor;
       $('tAvtoQism').hidden = !y.mahsulot_id && !y.avto_raqami;

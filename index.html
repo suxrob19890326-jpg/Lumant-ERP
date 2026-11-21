@@ -35,20 +35,24 @@
 
   <!-- 2) MENYU: kirgandan keyin ko'rinadi -->
   <main id="menyu" hidden>
-    <a class="card" href="yozuv.html">✍️ Yangi yozuv</a>
-    <a class="card" href="sverka.html">💰 Qarzlar va sverka</a>
-    <a class="card" href="kassa.html">💵 Kassa</a>
-    <a class="card" href="ombor.html">📦 Ombor</a>
-    <a class="card" href="ishlab.html">🏭 Ishlab chiqarish</a>
-    <a class="card" href="hisobot.html">📊 Hisobot</a>
-    <a class="card" href="spravochnik.html">📚 Spravochniklar</a>
-    <p class="kim">Siz: <b id="kim"></b> · <a href="#" id="chiqish">Chiqish</a></p>
+    <p id="rolsiz" class="panel rolsiz" hidden>Sizga hali rol berilmagan. Admin'ga murojaat qiling —
+      u "Xodimlar" bo'limida sizga rol beradi.</p>
+    <a class="card" data-s="yozuv" href="yozuv.html">✍️ Yangi yozuv</a>
+    <a class="card" data-s="sverka" href="sverka.html">💰 Qarzlar va sverka</a>
+    <a class="card" data-s="kassa" href="kassa.html">💵 Kassa</a>
+    <a class="card" data-s="ombor" href="ombor.html">📦 Ombor</a>
+    <a class="card" data-s="ishlab" href="ishlab.html">🏭 Ishlab chiqarish</a>
+    <a class="card" data-s="hisobot" href="hisobot.html">📊 Hisobot</a>
+    <a class="card" data-s="spravochnik" href="spravochnik.html">📚 Spravochniklar</a>
+    <a class="card" data-s="xodimlar" href="xodimlar.html">👤 Xodimlar va rollar</a>
+    <a class="card" data-s="tarix" href="tarix.html">🕓 O'zgarishlar tarixi</a>
+    <p class="kim">Siz: <b id="kim"></b> <span id="rolNomi"></span> · <a href="#" id="chiqish">Chiqish</a></p>
   </main>
 
   <footer>Kogon tumani · Lumant Beton</footer>
 
   <script type="module">
-    import { db } from './db.js';
+    import { db, rolim, ruxsat, ROL_NOMI } from './db.js';
 
     const login = document.getElementById('login');
     const menyu = document.getElementById('menyu');
@@ -58,7 +62,13 @@
       const user = data.session?.user;
       login.hidden = !!user;
       menyu.hidden = !user;
-      if (user) document.getElementById('kim').textContent = user.email;
+      if (!user) return;
+      document.getElementById('kim').textContent = user.email;
+      // Faqat rolga ochiq bo'limlar ko'rinadi
+      const rol = await rolim(user);
+      document.querySelectorAll('#menyu .card[data-s]').forEach(c => { c.hidden = !ruxsat(rol, c.dataset.s); });
+      document.getElementById('rolsiz').hidden = !!rol;
+      document.getElementById('rolNomi').textContent = rol ? `(${ROL_NOMI[rol] || rol})` : '';
     }
 
     login.addEventListener('submit', async (e) => {
@@ -84,7 +94,7 @@
     document.getElementById('chiqish').addEventListener('click', async (e) => {
       e.preventDefault();
       await db.auth.signOut();
-      korsat();
+      location.reload();   // rol xotirasi ham tozalansin (boshqa xodim kirishi mumkin)
     });
 
     korsat();

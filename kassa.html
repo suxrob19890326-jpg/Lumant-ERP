@@ -81,7 +81,7 @@
   <script type="module">
     import { db, loginShart, pul, toza } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('kassa');
 
     const $ = (id) => document.getElementById(id);
     const KASSA = { naqd: '💵 Naqd', karta: '💳 Karta', bank: '🏦 Bank' };

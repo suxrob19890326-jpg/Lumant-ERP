@@ -90,7 +90,7 @@
   <script type="module">
     import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh, kunlarFarqi } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('hisobot');
     const $ = (id) => document.getElementById(id);
 
     // ---------- 1) Qarzlar va kassa ----------

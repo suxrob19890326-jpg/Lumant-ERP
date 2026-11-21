@@ -92,7 +92,7 @@
   <script type="module">
     import { db, loginShart, pul, toza, kalit, mos, saralash, hammasi } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('yozuv');
 
     const $ = (id) => document.getElementById(id);
     const MAHSULOTLI = ['yuk_berildi', 'mahsulot_olindi'];
@@ -294,7 +294,11 @@
     // ---------- Boshlang'ich holat ----------
     $('sana').value = bugun();
     kassaTanla('naqd');
-    turTanla('yuk_berildi');
+    // Kassir faqat to'lov yozuvlarini kiritadi (bazada ham shunday cheklangan)
+    if (user.rol === 'kassir') {
+      document.querySelectorAll('[data-tur=yuk_berildi], [data-tur=mahsulot_olindi]').forEach(b => b.hidden = true);
+      turTanla('tolov_keldi');
+    } else turTanla('yuk_berildi');
     const url = new URLSearchParams(location.search);
     const oldin = mijozlar.find(m => m.id == url.get('mijoz'));
     if (oldin) mijozTanla(oldin);

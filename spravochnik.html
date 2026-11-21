@@ -29,10 +29,21 @@
       <button type="button" data-t="mahsulot">🧱 Mahsulotlar</button>
     </div>
     <button type="button" id="yangi">➕ Yangi mijoz</button>
+    <button type="button" id="oxshashTugma" class="tugma-oddiy" hidden>🔀 O'xshash mijozlar</button>
     <input id="qidir" placeholder="Qidirish (lotin yoki kirill)..." autocomplete="off">
     <p id="holat" class="soni">Yuklanmoqda...</p>
     <div id="royxat"></div>
     <button type="button" class="tugma-oddiy" id="koproq" hidden>Yana ko'rsatish</button>
+  </section>
+
+  <!-- O'XSHASH MIJOZLAR (admin / rahbar) -->
+  <section class="panel" id="oxshashOyna" hidden>
+    <h2 class="kichik-sarlavha">O'xshash mijozlar</h2>
+    <p class="tushuntir">Tizim nomlari o'xshash juftliklarni topdi. Bir odam bo'lsa — qaysi nom qolishini tanlang:
+      ikkinchisining barcha yozuvlari unga o'tadi (qarz qo'shiladi). Har xil odam bo'lsa — "Har xil" ni bosing.</p>
+    <p id="oxXabar" class="xato"></p>
+    <div id="juftlar"></div>
+    <button type="button" class="tugma-oddiy" id="juftKoproq" hidden>Yana ko'rsatish</button>
   </section>
 
   <!-- TAHRIRLASH -->
@@ -45,6 +56,13 @@
       <label>Telefon <input id="f_telefon" type="tel" inputmode="tel" placeholder="+998 90 123 45 67"></label>
       <label>Izoh <input id="f_izoh" placeholder="manzil, mas'ul shaxs..."></label>
       <p id="f_qoldiq" class="soni"></p>
+      <div id="birlashQism" class="birlash" hidden>
+        <label>🔀 Shu mijozni boshqasiga birlashtirish
+          <input id="f_birlash" list="mijozNomlari" placeholder="qoladigan mijoz nomini tanlang">
+        </label>
+        <datalist id="mijozNomlari"></datalist>
+        <button type="button" id="birlashTugma" class="tugma-oddiy">Birlashtirish</button>
+      </div>
     </div>
 
     <div id="mahsulotMaydon">
@@ -67,9 +85,9 @@
   </form>
 
   <script type="module">
-    import { db, loginShart, pul, toza, kalit, mos, saralash, hammasi } from './db.js';
+    import { db, loginShart, pul, sana, toza, kalit, mos, saralash, hammasi, oxshashJuftlar } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('spravochnik');
     const $ = (id) => document.getElementById(id);
     function son(s) {
       const t = String(s).replace(/\s/g, '').replace(',', '.');
@@ -83,7 +101,7 @@
     async function yukla() {
       const [m, q] = await Promise.all([
         hammasi(() => db.from('mijozlar').select('id, nomi, telefon, izoh').order('nomi').order('id')),
-        hammasi(() => db.from('mijoz_qoldiq').select('id, qoldiq').order('id')),
+        hammasi(() => db.from('mijoz_qoldiq').select('id, qoldiq, oxirgi_yozuv').order('id')),
       ]);
       let p = await hammasi(() => db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx, turkum').order('nomi').order('id'));
       if (p.error && /turkum/.test(p.error.message)) {   // 04_ombor.sql ishga tushirilmagan
@@ -92,8 +110,9 @@
       }
       const xato = m.error || q.error || p.error;
       if (xato) { $('holat').textContent = 'Xato: ' + xato.message; return false; }
-      const qoldiq = new Map(q.data.map(r => [r.id, Number(r.qoldiq)]));
-      mijozlar = m.data.map(r => ({ ...r, qoldiq: qoldiq.get(r.id) ?? 0 }));
+      const qoldiq = new Map(q.data.map(r => [r.id, r]));
+      mijozlar = m.data.map(r => ({ ...r, qoldiq: Number(qoldiq.get(r.id)?.qoldiq ?? 0), oxirgi_yozuv: qoldiq.get(r.id)?.oxirgi_yozuv || null }));
+      $('mijozNomlari').innerHTML = mijozlar.map(x => `<option value="${toza(x.nomi)}">`).join('');
       mahsulotlar = p.data;
       $('turkumQism').hidden = !turkumBor;
       $('olchovlar').innerHTML = [...new Set(mahsulotlar.map(x => x.olchov).filter(Boolean))].sort()
@@ -110,6 +129,9 @@
       tab = t;
       document.querySelectorAll('#tablar button').forEach(b => b.classList.toggle('tanlangan', b.dataset.t === t));
       $('yangi').textContent = t === 'mijoz' ? '➕ Yangi mijoz' : '➕ Yangi mahsulot';
+      $('oxshashTugma').hidden = !(t === 'mijoz' && boshqaruvchi);
+      if (t === 'mijoz' && boshqaruvchi) chizJuftlar();   // tugmada juftliklar soni ko'rinsin
+      if (t !== 'mijoz') $('oxshashOyna').hidden = true;
       korsat = 50;
       chiz();
     }
@@ -159,6 +181,8 @@
         ? `Qoldiq: <b>${pul(x.qoldiq)} so'm</b> · <a href="sverka.html?mijoz=${encodeURIComponent(x.id)}">Sverkani ochish</a>` : '';
       $('xato').textContent = '';
       $('xato').classList.remove('ok');
+      $('birlashQism').hidden = !(mj && x && boshqaruvchi);
+      $('f_birlash').value = '';
       oxshashTekshir();
       $('royxatOyna').hidden = true;
       $('forma').hidden = false;
@@ -237,6 +261,76 @@
       $('formaSarlavha').textContent = tab === 'mijoz' ? 'Mijozni tahrirlash' : 'Mahsulotni tahrirlash';
       if (tab === 'mijoz') $('f_qoldiq').innerHTML =
         `Qoldiq: <b>${pul(tahrir.qoldiq)} so'm</b> · <a href="sverka.html?mijoz=${encodeURIComponent(tahrir.id)}">Sverkani ochish</a>`;
+    });
+
+    // ---------- Mijozlarni birlashtirish (admin / rahbar) ----------
+    const boshqaruvchi = ['admin', 'rahbar'].includes(user.rol);
+    const qisqa = (x) => `${pul(x.qoldiq)} so'm${x.oxirgi_yozuv ? ' · oxirgi: ' + sana(x.oxirgi_yozuv) : ''}${x.telefon ? ' · 📞 ' + x.telefon : ''}`;
+
+    async function birlashtir(qoladi, ochiriladi, xabarEl) {
+      if (!confirm(`"${ochiriladi.nomi}" ning BARCHA yozuvlari "${qoladi.nomi}" ga o'tadi, "${ochiriladi.nomi}" o'chiriladi.\n` +
+        `Qarzlar qo'shiladi: ${pul(ochiriladi.qoldiq)} + ${pul(qoladi.qoldiq)} = ${pul(ochiriladi.qoldiq + qoladi.qoldiq)} so'm.\n\nBuni ortga qaytarib bo'lmaydi. Davom etilsinmi?`)) return false;
+      xabarEl.classList.remove('ok');
+      xabarEl.textContent = 'Birlashtirilmoqda...';
+      const { data, error } = await db.rpc('mijoz_birlashtir', { p_qoladi: qoladi.id, p_ochiriladi: ochiriladi.id });
+      if (error) {
+        xabarEl.textContent = 'Birlashtirilmadi: ' + (/mijoz_birlashtir|schema cache|Could not find the function/i.test(error.message)
+          ? 'supabase/07_rollar_tarix.sql hali ishga tushirilmagan' : error.message);
+        return false;
+      }
+      await yukla();
+      xabarEl.textContent = `✅ "${ochiriladi.nomi}" → "${qoladi.nomi}" ga birlashtirildi (${data} ta yozuv ko'chdi)`;
+      xabarEl.classList.add('ok');
+      return true;
+    }
+
+    // O'xshash juftliklar ro'yxati
+    const HARXIL = 'lumant_harxil';
+    const harxil = () => { try { return new Set(JSON.parse(localStorage.getItem(HARXIL) || '[]')); } catch { return new Set(); } };
+    const juftKalit = (a, b) => [a.id, b.id].sort((x, y) => x - y).join('-');
+    let juftKorsat = 20;
+    function chizJuftlar() {
+      const h = harxil();
+      const juftlar = oxshashJuftlar(mijozlar).filter(j => !h.has(juftKalit(j.a, j.b)));
+      $('oxshashTugma').textContent = `🔀 O'xshash mijozlar (${juftlar.length})`;
+      $('juftlar').innerHTML = juftlar.slice(0, juftKorsat).map(j => `
+        <div class="juft" data-a="${toza(j.a.id)}" data-b="${toza(j.b.id)}">
+          ${[j.a, j.b].map((x, i) => `<div class="juft-tomon">
+            <b>${toza(x.nomi)}</b><small>${toza(qisqa(x))}</small>
+            <button type="button" data-qol="${i ? 'b' : 'a'}">✅ Shu qolsin</button>
+          </div>`).join('')}
+          <button type="button" class="tugma-oddiy" data-harxil>Har xil odamlar</button>
+        </div>`).join('') || '<p class="soni">O\'xshash juftlik qolmadi 🎉</p>';
+      $('juftKoproq').hidden = juftlar.length <= juftKorsat;
+    }
+    $('oxshashTugma').addEventListener('click', () => {
+      $('oxshashOyna').hidden = !$('oxshashOyna').hidden;
+      if (!$('oxshashOyna').hidden) { juftKorsat = 20; chizJuftlar(); $('oxshashOyna').scrollIntoView({ behavior: 'smooth' }); }
+    });
+    $('juftKoproq').addEventListener('click', () => { juftKorsat += 30; chizJuftlar(); });
+    $('juftlar').addEventListener('click', async (e) => {
+      const div = e.target.closest('.juft');
+      if (!div) return;
+      const a = mijozlar.find(x => x.id == div.dataset.a), b = mijozlar.find(x => x.id == div.dataset.b);
+      if (e.target.closest('[data-harxil]')) {
+        const h = harxil(); h.add(juftKalit(a, b));
+        try { localStorage.setItem(HARXIL, JSON.stringify([...h])); } catch {}
+        chizJuftlar();
+        return;
+      }
+      const btn = e.target.closest('[data-qol]');
+      if (!btn) return;
+      const [qoladi, ochiriladi] = btn.dataset.qol === 'a' ? [a, b] : [b, a];
+      if (await birlashtir(qoladi, ochiriladi, $('oxXabar'))) { chizJuftlar(); chiz(); }
+    });
+
+    // Formadan qo'lda birlashtirish
+    $('birlashTugma').addEventListener('click', async () => {
+      const nom = $('f_birlash').value.trim();
+      const qoladi = mijozlar.find(x => x.nomi === nom);
+      if (!qoladi) { $('xato').textContent = 'Qoladigan mijozni ro\'yxatdan aniq tanlang'; return; }
+      if (qoladi.id === tahrir.id) { $('xato').textContent = 'Boshqa mijozni tanlang'; return; }
+      if (await birlashtir(qoladi, tahrir, $('xato'))) och(mijozlar.find(x => x.id === qoladi.id));
     });
 
     // ---------- Boshlang'ich holat ----------

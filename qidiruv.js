@@ -61,3 +61,39 @@ export function saralash(royxat, soz, nomi = (x) => x.nomi) {
     return ba === bb ? 0 : ba ? -1 : 1;   // barqaror saralash: qolgan tartib o'zgarmaydi
   });
 }
+
+// O'xshash nomli juftliklarni topish (takror mijozlarni birlashtirish uchun).
+// - so'zlar bir xil (tartibi farq qilishi mumkin): "Миксер Рустам" ⟷ "Рустам миксер"
+// - biri ikkinchisining ichida (kamida 2 so'z): "Жамшид Зокир" ⟷ "Жамшид Зокир гиж"
+// Ikkalasida HAR XIL raqam bo'lsa (telefon / mashina) — har xil odam deb hisoblanadi.
+const UNVON = new Set(['aka', 'ake', 'opa', 'uka', 'xola', 'amaki', 'ota', 'ona']);
+export function oxshashJuftlar(royxat, nomi = (x) => x.nomi) {
+  const T = royxat.map(x => {
+    const n = nomi(x);
+    const sozlar = [...new Set(kalit(n).replace(/[^a-z§¢ ]+/g, ' ').split(' ')
+      .filter(t => t.length > 1 && !UNVON.has(t)))].sort();
+    return { x, sozlar, kalit: sozlar.join(' '), raqam: (n.match(/\d+/g) || []).join('-') };
+  }).filter(t => t.sozlar.length);
+
+  const juftlar = [];
+  // 1) so'zlari bir xil — guruhlab (tez)
+  const guruh = new Map();
+  for (const t of T) { if (!guruh.has(t.kalit)) guruh.set(t.kalit, []); guruh.get(t.kalit).push(t); }
+  for (const g of guruh.values()) {
+    for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+      const a = g[i], b = g[j];
+      if (a.raqam && b.raqam && a.raqam !== b.raqam) continue;
+      juftlar.push({ a: a.x, b: b.x, kuch: a.sozlar.length > 1 ? 3 : 2 });
+    }
+  }
+  // 2) biri ikkinchisining ichida (kamida 2 so'z)
+  const kopSozli = T.filter(t => t.sozlar.length >= 2);
+  for (const k of kopSozli) {
+    for (const u of kopSozli) {
+      if (u.sozlar.length <= k.sozlar.length) continue;
+      if (k.raqam && u.raqam && k.raqam !== u.raqam) continue;
+      if (k.sozlar.every(s => u.sozlar.includes(s))) juftlar.push({ a: k.x, b: u.x, kuch: 1 });
+    }
+  }
+  return juftlar.sort((p, q) => q.kuch - p.kuch);
+}

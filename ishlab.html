@@ -57,7 +57,7 @@
   <script type="module">
     import { db, loginShart, pul, toza, mos, saralash } from './db.js';
 
-    await loginShart();
+    const user = await loginShart('ishlab');
 
     const $ = (id) => document.getElementById(id);
     function son(s) {

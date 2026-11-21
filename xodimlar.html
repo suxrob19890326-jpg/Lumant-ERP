@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<!-- Xodimlar va rollar: admin rol beradi, o'chiradi; rahbar ko'radi -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Xodimlar · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Xodimlar</h1>
+  </header>
+
+  <section class="panel">
+    <p id="holat" class="xato">Yuklanmoqda...</p>
+    <div id="royxat"></div>
+  </section>
+
+  <section class="panel">
+    <h2 class="kichik-sarlavha">Yangi xodim qo'shish</h2>
+    <ol class="yoriqnoma">
+      <li>Supabase → <b>Authentication → Users → Add user → Create new user</b>.</li>
+      <li>Xodimning emaili va parolini yozing, <b>Auto Confirm User</b> belgisini qo'ying.</li>
+      <li>Shu sahifani yangilang — xodim ro'yxatda <b>rolsiz</b> paydo bo'ladi. Unga rol bering.</li>
+    </ol>
+    <h2 class="kichik-sarlavha">Rollar nima qila oladi</h2>
+    <table class="rollar">
+      <tr><th>Admin</th><td>Hammasi + xodimlarga rol berish</td></tr>
+      <tr><th>Rahbar</th><td>Hammasi, tarix; yozuvlarni qulflash va mijozlarni birlashtirish</td></tr>
+      <tr><th>Sotuvchi</th><td>Yangi yozuv, sverka, mijozlar; omborni ko'radi</td></tr>
+      <tr><th>Kassir</th><td>Kassa, to'lov yozuvlari, sverka</td></tr>
+      <tr><th>Omborchi</th><td>Ombor, ishlab chiqarish, mahsulotlar</td></tr>
+    </table>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, toza, ROL_NOMI, sana } from './db.js';
+
+    const user = await loginShart('xodimlar');
+    const $ = (id) => document.getElementById(id);
+    const admin = user.rol === 'admin';
+
+    let xodimlar = [];
+    async function yukla() {
+      const { data, error } = await db.from('xodimlar')
+        .select('user_id, email, ism, rol, faol, created_at').order('created_at');
+      if (error) {
+        $('holat').textContent = /xodimlar|schema cache|does not exist/i.test(error.message)
+          ? 'Rollar hali sozlanmagan: supabase/07_rollar_tarix.sql ni ishga tushiring.'
+          : 'Xato: ' + error.message;
+        return;
+      }
+      xodimlar = data;
+      const rolsiz = data.filter(x => !x.rol && x.faol).length;
+      $('holat').className = rolsiz ? 'ogoh' : 'soni';
+      $('holat').textContent = `${data.length} ta xodim` + (rolsiz ? ` · ${rolsiz} tasiga rol berilmagan` : '') +
+        (admin ? '' : ' · O\'zgartirishni faqat admin qila oladi');
+      chiz();
+    }
+
+    function chiz() {
+      const tanlov = (x) => `<select data-maydon="rol" ${!admin || x.user_id === user.id ? 'disabled' : ''}>
+          <option value="">— rol yo'q —</option>
+          ${Object.entries(ROL_NOMI).map(([k, v]) => `<option value="${k}" ${x.rol === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>`;
+      $('royxat').innerHTML = xodimlar.map(x => `
+        <div class="xodim ${x.faol ? '' : 'xira'}" data-id="${toza(x.user_id)}">
+          <div class="yuqori">
+            <span class="nomi">${toza(x.email)} ${x.user_id === user.id ? '<small>(siz)</small>' : ''}</span>
+            <span class="soni">${sana(String(x.created_at).slice(0, 10))}</span>
+          </div>
+          <div class="xodim-maydon">
+            <input data-maydon="ism" placeholder="Ism familiya" value="${toza(x.ism)}" ${admin ? '' : 'disabled'}>
+            ${tanlov(x)}
+            <label class="belgi"><input type="checkbox" data-maydon="faol" ${x.faol ? 'checked' : ''}
+              ${!admin || x.user_id === user.id ? 'disabled' : ''}> Faol</label>
+          </div>
+          <p class="xato" data-xabar></p>
+        </div>`).join('');
+    }
+
+    async function saqla(div, ozgarish) {
+      const id = div.dataset.id;
+      const xabar = div.querySelector('[data-xabar]');
+      xabar.classList.remove('ok');
+      xabar.textContent = 'Saqlanmoqda...';
+      const { data, error } = await db.from('xodimlar').update(ozgarish).eq('user_id', id).select().maybeSingle();
+      if (error || !data) {
+        xabar.textContent = 'Saqlanmadi: ' + (error ? error.message : 'ruxsat yo\'q');
+        chiz();   // eski qiymatni qaytaramiz
+        return;
+      }
+      Object.assign(xodimlar.find(x => x.user_id === id), data);
+      xabar.textContent = '✅ Saqlandi';
+      xabar.classList.add('ok');
+      div.classList.toggle('xira', !data.faol);
+    }
+
+    $('royxat').addEventListener('change', (e) => {
+      const el = e.target.closest('[data-maydon]');
+      if (!el || !admin) return;
+      const div = el.closest('.xodim');
+      const m = el.dataset.maydon;
+      if (m === 'rol') saqla(div, { rol: el.value || null });
+      if (m === 'faol') {
+        if (!el.checked && !confirm('Xodim o\'chirilsinmi? U tizimga kira oladi, lekin hech narsani ko\'rmaydi.')) { el.checked = true; return; }
+        saqla(div, { faol: el.checked });
+      }
+      if (m === 'ism') saqla(div, { ism: el.value.trim() || null });
+    });
+
+    yukla();
+  </script>
+</body>
+</html>
