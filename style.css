@@ -187,3 +187,30 @@ main { align-content: start; }
 a.qator-havola { display: block; color: inherit; text-decoration: none; }
 th.raqam { text-align: right; }
 .jadval-oyna { margin-bottom: 10px; }
+
+/* ---------- Sverka: davr va dalolatnoma ---------- */
+.davr-tanla { margin-top: 14px; }
+.davr-jami { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 12px; }
+.davr-jami div { background: #f6f2ee; border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.davr-jami span { display: block; font-size: 12px; color: #8a6a50; }
+.davr-jami b { display: block; font-size: 16px; color: #5A2E0E; overflow-wrap: anywhere; }
+
+.akt { display: none; }
+@media print {
+  @page { size: A4; margin: 14mm 12mm; }
+  body { background: white; display: block; min-height: 0; color: #000; }
+  .ekran, header, footer { display: none !important; }
+  .akt { display: block; font-size: 11px; }
+  .akt h2 { text-align: center; margin: 0; font-size: 16px; }
+  .akt-osti { text-align: center; margin: 2px 0 10px; color: #444; }
+  .akt-bosh td { padding: 2px 8px 2px 0; border: none; white-space: normal; }
+  .akt-jadval { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 10px; }
+  .akt-jadval th, .akt-jadval td { border: 1px solid #000; padding: 3px 4px; white-space: normal; }
+  .akt-jadval th { background: #eee !important; position: static; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .akt-jadval td:nth-child(n+4) { text-align: right; white-space: nowrap; }
+  .akt-jadval td:nth-child(3) { text-align: left; }
+  .akt-jami td { font-weight: bold; }
+  .akt-jadval tr { page-break-inside: avoid; }
+  .akt-xulosa { margin: 12px 0; font-size: 12px; }
+  .akt-imzo { display: flex; justify-content: space-between; gap: 24px; margin-top: 24px; font-size: 12px; }
+}

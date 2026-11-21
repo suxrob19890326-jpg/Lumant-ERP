@@ -90,7 +90,7 @@
   </section>
 
   <script type="module">
-    import { db, loginShart, pul, toza, kalit, mos, saralash } from './db.js';
+    import { db, loginShart, pul, toza, kalit, mos, saralash, hammasi } from './db.js';
 
     await loginShart();
 
@@ -114,7 +114,7 @@
 
     // ---------- Ma'lumotlarni yuklash ----------
     const [mj, mh] = await Promise.all([
-      db.from('mijoz_qoldiq').select('id, nomi, qoldiq').order('nomi'),
+      hammasi(() => db.from('mijoz_qoldiq').select('id, nomi, qoldiq').order('nomi').order('id')),   // 1000 tadan ko'p bo'lsa ham
       db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx').order('nomi'),
     ]);
     if (mj.error || mh.error) {

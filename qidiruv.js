@@ -25,7 +25,7 @@ const QOIDALAR = [
   [/w/g, 'v'],
   [/y([aeiou])/g, '$1'], // я=ya, е=ye, ё=yo, ю=yu → a, e, o, u
   [/([aeiou])y(?![aeiou])/g, '$1i'], // "graviy" / "гравий" — oxirdagi y ≈ i
-  [/(.)\1+/g, '$1'],     // ikkilangan harflar: "Ахмаддин" = "Axmadin"
+  [/([a-z§¢])\1+/g, '$1'], // ikkilangan harflar: "Ахмаддин" = "Axmadin" (raqamlarga tegmaydi)
 ];
 
 const kesh = new Map();
