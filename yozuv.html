@@ -55,6 +55,16 @@
       <label>Avto raqami <input id="avto" placeholder="01 A 123 BC"></label>
     </div>
 
+    <!-- 3b) Kassa (faqat to'lov turlarida): pul qaysi kassaga kirdi / qaysidan chiqdi -->
+    <div id="kassaQism" hidden>
+      <label>Kassa</label>
+      <div class="turlar uch" id="kassalar">
+        <button type="button" data-k="naqd">💵 Naqd</button>
+        <button type="button" data-k="karta">💳 Karta</button>
+        <button type="button" data-k="bank">🏦 Bank</button>
+      </div>
+    </div>
+
     <!-- 4) Summa: yukda o'zi hisoblanadi, to'lovda qo'lda yoziladi -->
     <label>Summa
       <input id="summa" inputmode="decimal" placeholder="0">
@@ -120,12 +130,24 @@
     let turi = 'yuk_berildi';
     let mijoz = null;
     let summaQolda = false;   // summani foydalanuvchi o'zi yozganmi
+    let kassa = 'naqd';       // to'lov qaysi kassaga tushadi
+
+    function kassaTanla(k) {
+      kassa = k;
+      document.querySelectorAll('#kassalar button').forEach(b =>
+        b.classList.toggle('tanlangan', b.dataset.k === k));
+    }
+    $('kassalar').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-k]');
+      if (b) kassaTanla(b.dataset.k);
+    });
 
     function turTanla(t) {
       turi = t;
       document.querySelectorAll('#turlar button').forEach(b =>
         b.classList.toggle('tanlangan', b.dataset.tur === t));
       $('mahsulotQism').hidden = !MAHSULOTLI.includes(t);
+      $('kassaQism').hidden = MAHSULOTLI.includes(t);
       $('tushuntir').textContent = TUSHUNTIR[t];
       // Avtomatik hisoblangan summa boshqa turga o'tganda qolib ketmasin
       if (!summaQolda) $('summa').value = '';
@@ -215,6 +237,7 @@
         });
       }
       if (!(summa > 0)) { xato.textContent = 'Summani to\'g\'ri yozing'; return; }
+      if (!MAHSULOTLI.includes(turi)) yozuv.kassa = kassa;   // kassaga o'zi tushadi
       yozuv.summa = summa;   // belgini (+/−) baza o'zi qo'yadi
 
       const tugma = $('saqla');
@@ -259,6 +282,7 @@
 
     // ---------- Boshlang'ich holat ----------
     $('sana').value = bugun();
+    kassaTanla('naqd');
     turTanla('yuk_berildi');
     const url = new URLSearchParams(location.search);
     const oldin = mijozlar.find(m => m.id == url.get('mijoz'));

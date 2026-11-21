@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<!-- Kassa: naqd / karta / bank qoldig'i, kunlik kirim-chiqim, yangi yozuv -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kassa · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase kutubxonasi: bitta fayl, o'zimizning saytdan (tez yuklanadi) -->
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Kassa</h1>
+  </header>
+
+  <!-- 1) Qoldiqlar -->
+  <section class="panel">
+    <div class="kassa-qoldiq">
+      <div><span>💵 Naqd</span><b id="q_naqd">…</b></div>
+      <div><span>💳 Karta</span><b id="q_karta">…</b></div>
+      <div><span>🏦 Bank</span><b id="q_bank">…</b></div>
+    </div>
+    <p class="jami">Jami: <b id="q_jami">…</b></p>
+    <p id="holat" class="xato"></p>
+  </section>
+
+  <!-- 2) Yangi kassa yozuvi -->
+  <form id="forma" class="panel" autocomplete="off" onsubmit="event.preventDefault()">
+    <div class="turlar uch" id="yonalishlar">
+      <button type="button" data-y="kirim">⬆️ Kirim</button>
+      <button type="button" data-y="chiqim">⬇️ Chiqim</button>
+      <button type="button" data-y="otkazma">🔁 O'tkazma</button>
+    </div>
+
+    <div id="bittaKassa">
+      <label>Kassa</label>
+      <div class="turlar uch kassa-tanla" data-nom="kassa"></div>
+    </div>
+    <div id="ikkiKassa" class="ikki">
+      <div><label>Qayerdan</label><div class="turlar ustun kassa-tanla" data-nom="dan"></div></div>
+      <div><label>Qayerga</label><div class="turlar ustun kassa-tanla" data-nom="ga"></div></div>
+    </div>
+
+    <div class="ikki">
+      <label>Summa <input id="summa" inputmode="decimal" placeholder="0"></label>
+      <label>Sana <input id="sana" type="date" required></label>
+    </div>
+    <label id="toifaQism">Toifa
+      <input id="toifa" list="toifalar" placeholder="tanlang yoki yozing">
+    </label>
+    <datalist id="toifalar"></datalist>
+    <label>Izoh <input id="izoh" placeholder="ixtiyoriy"></label>
+
+    <button type="submit" id="saqla">Saqlash</button>
+    <p id="xato" class="xato"></p>
+  </form>
+
+  <!-- 3) Kunlik ro'yxat -->
+  <section class="panel">
+    <div class="kun">
+      <button type="button" id="oldingi" aria-label="Oldingi kun">‹</button>
+      <input id="kun" type="date">
+      <button type="button" id="keyingi" aria-label="Keyingi kun">›</button>
+    </div>
+    <p class="kun-jami">
+      <span class="kirim">+<b id="kunKirim">0</b></span>
+      <span class="chiqim">−<b id="kunChiqim">0</b></span>
+    </p>
+    <div id="qatorlar"></div>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, pul, toza } from './db.js';
+
+    await loginShart();
+
+    const $ = (id) => document.getElementById(id);
+    const KASSA = { naqd: '💵 Naqd', karta: '💳 Karta', bank: '🏦 Bank' };
+    const TOIFA = {
+      kirim:  ["Boshlang'ich qoldiq", 'Boshqa kirim'],
+      chiqim: ['Oylik', 'Avans (xodim)', "Yoqilg'i", "Ta'mirlash", 'Ehtiyot qism', 'Kommunal',
+               'Soliq', 'Ijara', 'Transport', 'Ovqat', 'Boshqa xarajat'],
+    };
+
+    // "1 250 000,5" → 1250000.5 ; bo'sh bo'lsa null
+    function son(s) {
+      const t = String(s).replace(/\s/g, '').replace(',', '.');
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    const bugun = () => new Date().toLocaleDateString('sv-SE');
+    function kunQosh(s, n) {
+      const d = new Date(s + 'T12:00:00');
+      d.setDate(d.getDate() + n);
+      return d.toLocaleDateString('sv-SE');
+    }
+
+    // ---------- Forma holati ----------
+    let yonalish = 'chiqim';
+    const tanlov = { kassa: 'naqd', dan: 'naqd', ga: 'bank' };
+
+    document.querySelectorAll('.kassa-tanla').forEach(div => {
+      div.innerHTML = Object.entries(KASSA).map(([k, v]) =>
+        `<button type="button" data-k="${k}">${v}</button>`).join('');
+      div.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-k]');
+        if (b) { tanlov[div.dataset.nom] = b.dataset.k; chizKassa(); }
+      });
+    });
+    function chizKassa() {
+      document.querySelectorAll('.kassa-tanla').forEach(div =>
+        div.querySelectorAll('button').forEach(b =>
+          b.classList.toggle('tanlangan', b.dataset.k === tanlov[div.dataset.nom])));
+    }
+
+    function yonalishTanla(y) {
+      yonalish = y;
+      document.querySelectorAll('#yonalishlar button').forEach(b =>
+        b.classList.toggle('tanlangan', b.dataset.y === y));
+      const otk = y === 'otkazma';
+      $('bittaKassa').hidden = otk;
+      $('ikkiKassa').hidden = !otk;
+      $('toifaQism').hidden = otk;
+      $('toifalar').innerHTML = (TOIFA[y] || []).map(t => `<option value="${toza(t)}">`).join('');
+      $('toifa').value = '';
+    }
+    $('yonalishlar').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-y]');
+      if (b) yonalishTanla(b.dataset.y);
+    });
+
+    // ---------- Qoldiqlar ----------
+    async function qoldiqlar() {
+      const { data, error } = await db.from('kassa_qoldiq').select('kassa, qoldiq');
+      if (error) {
+        $('holat').textContent = /kassa_qoldiq|schema cache|does not exist/i.test(error.message)
+          ? 'Kassa jadvali hali bazada yo\'q: supabase/03_kassa.sql ni ishga tushiring.'
+          : 'Xato: ' + error.message;
+        return false;
+      }
+      let jami = 0;
+      for (const r of data) {
+        const el = $('q_' + r.kassa);
+        if (el) {
+          el.textContent = pul(r.qoldiq);
+          el.classList.toggle('manfiy', Number(r.qoldiq) < 0);
+        }
+        jami += Number(r.qoldiq);
+      }
+      $('q_jami').textContent = pul(jami) + ' so\'m';
+      return true;
+    }
+
+    // ---------- Kunlik ro'yxat ----------
+    let soralgan = 0;
+    async function royxat() {
+      const kun = $('kun').value;
+      const men = ++soralgan;
+      $('qatorlar').innerHTML = '<p class="soni">Yuklanmoqda...</p>';
+      const { data, error } = await db.from('kassa_yozuvlar')
+        .select('id, sana, kassa, yonalish, summa, toifa, izoh, yozuv_id, yozuvlar(mijozlar(nomi))')
+        .eq('sana', kun).order('id', { ascending: false });
+      if (men !== soralgan) return;
+      if (error) { $('qatorlar').innerHTML = `<p class="xato">Xato: ${toza(error.message)}</p>`; return; }
+
+      let kirim = 0, chiqim = 0;
+      $('qatorlar').innerHTML = data.map(r => {
+        const s = Number(r.summa);
+        if (r.yonalish === 'kirim') kirim += s; else chiqim += s;
+        const mijoz = r.yozuvlar?.mijozlar?.nomi;
+        const nomi = mijoz ? `${toza(r.toifa)}: ${toza(mijoz)}` : (toza(r.toifa) || (r.yonalish === 'kirim' ? 'Kirim' : 'Chiqim'));
+        return `<div class="yozuv ${r.yonalish}">
+          <div class="yuqori">
+            <span class="nomi">${nomi}</span>
+            <span class="summa">${r.yonalish === 'kirim' ? '+' : '−'}${pul(s)}</span>
+          </div>
+          <div class="pastki">
+            <span>${toza(r.izoh)}</span>
+            <span class="q">${KASSA[r.kassa] || toza(r.kassa)}</span>
+          </div>
+        </div>`;
+      }).join('') || '<p class="soni">Bu kunda yozuv yo\'q</p>';
+      $('kunKirim').textContent = pul(kirim);
+      $('kunChiqim').textContent = pul(chiqim);
+    }
+
+    function kunTanla(s) {
+      $('kun').value = s;
+      $('keyingi').disabled = s >= bugun();
+      royxat();
+    }
+    $('kun').addEventListener('change', () => kunTanla($('kun').value || bugun()));
+    $('oldingi').addEventListener('click', () => kunTanla(kunQosh($('kun').value, -1)));
+    $('keyingi').addEventListener('click', () => kunTanla(kunQosh($('kun').value, 1)));
+
+    // ---------- Saqlash ----------
+    $('forma').addEventListener('submit', async () => {
+      const xato = $('xato');
+      xato.textContent = '';
+      const summa = son($('summa').value);
+      if (!(summa > 0)) { xato.textContent = 'Summani to\'g\'ri yozing'; $('summa').focus(); return; }
+      const sana = $('sana').value;
+      if (!sana) { xato.textContent = 'Sanani tanlang'; return; }
+      const izoh = $('izoh').value.trim() || null;
+
+      let qatorlar;
+      if (yonalish === 'otkazma') {
+        if (tanlov.dan === tanlov.ga) { xato.textContent = 'Qayerdan va qayerga bir xil bo\'lmasin'; return; }
+        const toifa = 'O\'tkazma';
+        qatorlar = [
+          { sana, kassa: tanlov.dan, yonalish: 'chiqim', summa, toifa, izoh },
+          { sana, kassa: tanlov.ga,  yonalish: 'kirim',  summa, toifa, izoh },
+        ];
+      } else {
+        const toifa = $('toifa').value.trim();
+        if (!toifa) { xato.textContent = 'Toifani tanlang yoki yozing'; $('toifa').focus(); return; }
+        qatorlar = [{ sana, kassa: tanlov.kassa, yonalish, summa, toifa, izoh }];
+      }
+
+      const tugma = $('saqla');
+      tugma.disabled = true;
+      tugma.textContent = 'Saqlanmoqda...';
+      const { error } = await db.from('kassa_yozuvlar').insert(qatorlar);   // bitta so'rov: ikkalasi birga
+      tugma.disabled = false;
+      tugma.textContent = 'Saqlash';
+      if (error) { xato.textContent = 'Saqlanmadi: ' + error.message; return; }
+
+      ['summa', 'toifa', 'izoh'].forEach(id => $(id).value = '');
+      xato.textContent = '';
+      $('saqla').textContent = '✅ Saqlandi';
+      setTimeout(() => { if (!tugma.disabled) tugma.textContent = 'Saqlash'; }, 1500);
+      await qoldiqlar();
+      kunTanla(sana);
+    });
+
+    // ---------- Boshlang'ich holat ----------
+    yonalishTanla('chiqim');
+    chizKassa();
+    $('sana').value = bugun();
+    if (await qoldiqlar()) kunTanla(bugun());
+  </script>
+</body>
+</html>
