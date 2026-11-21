@@ -66,6 +66,28 @@
     </div>
   </section>
 
+  <!-- Yozuvni tahrirlash (yozuv bosilganda ochiladi) -->
+  <form id="tahrir" class="panel ekran" autocomplete="off" hidden onsubmit="event.preventDefault()">
+    <h2 class="kichik-sarlavha" id="tSarlavha"></h2>
+    <p id="tQulf" class="ogoh" hidden>🔒 Bu yozuv qulflangan — uni hech kim o'zgartira olmaydi.</p>
+    <fieldset id="tMaydon">
+      <label>Sana <input id="tSana" type="date" required></label>
+      <div class="ikki" id="tMiqdorQism">
+        <label>Miqdor <input id="tMiqdor" inputmode="decimal"></label>
+        <label>Narx <input id="tNarx" inputmode="decimal"></label>
+      </div>
+      <label>Summa <span id="tBelgi" class="soni"></span> <input id="tSumma" inputmode="decimal"></label>
+      <label id="tAvtoQism">Avto raqami <input id="tAvto"></label>
+      <label>Izoh <input id="tIzoh"></label>
+      <div class="ikki">
+        <button type="submit" id="tSaqla">Saqlash</button>
+        <button type="button" id="tQulfla" class="tugma-oddiy">🔒 Qulflash</button>
+      </div>
+    </fieldset>
+    <button type="button" id="tYop" class="tugma-oddiy">Yopish</button>
+    <p id="tXato" class="xato"></p>
+  </form>
+
   <!-- Chop etish uchun: solishtirma dalolatnoma (faqat printerda / PDF'da ko'rinadi) -->
   <article id="akt" class="akt"></article>
 
@@ -129,7 +151,7 @@
       holat.textContent = 'Yuklanmoqda...';
       const { data, error } = await hammasi(() => db
         .from('yozuvlar')
-        .select('id, sana, turi, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
+        .select('id, sana, turi, mahsulot_id, olchov, miqdor, narx, summa, avto_raqami, izoh, qulf, mahsulotlar(nomi)')
         .eq('mijoz_id', mijoz.id)
         .order('sana').order('id'));
       if (men !== soralgan) return;
@@ -145,7 +167,8 @@
         jami > 0 ? 'Mijoz bizdan qarz' : jami < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
       $('yozuvga').href = 'yozuv.html?mijoz=' + encodeURIComponent(mijoz.id);
       $('natija').hidden = false;
-      davrTanla(davrNomi || 'hammasi');
+      if (davrNomi === 'qolda') chiz();          // qo'lda tanlangan sanalar saqlanib qoladi
+      else davrTanla(davrNomi || 'hammasi');
     }
 
     // 4) Davr
@@ -211,7 +234,7 @@
           y.avto_raqami ? `🚚 ${toza(y.avto_raqami)}` : '',
           toza(y.izoh),
         ].filter(Boolean).join(' · ');
-        return `<div class="yozuv ${y.s < 0 ? 'minus' : ''}">
+        return `<div class="yozuv bosiladi ${y.s < 0 ? 'minus' : ''}" data-id="${toza(y.id)}">
           <div class="yuqori">
             <span class="sana">${sana(y.sana)}</span>
             <span class="nomi">${nomi} ${y.qulf ? '🔒' : ''}</span>
@@ -281,7 +304,94 @@
          ['', 'Davr oxiridagi qoldiq', '', '', '', '', h.plus, -h.minus, h.oxir, '', '']]);
     });
 
-    // 7) Havolada ?mijoz=ID bo'lsa, o'sha mijozni darhol ochamiz
+    // 7) Yozuvni tahrirlash / qulflash
+    function son(s) {
+      const t = String(s).replace(/\s/g, '').replace(',', '.');
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    let tYozuv = null, tSummaQolda = false;
+    $('qatorlar').addEventListener('click', (e) => {
+      const el = e.target.closest('[data-id]');
+      if (el) tahrirOch(yozuvlar.find(y => y.id == el.dataset.id));
+    });
+    function tahrirOch(y) {
+      tYozuv = y;
+      tSummaQolda = false;
+      const tuz = y.turi === 'tuzatish';
+      $('tSarlavha').textContent = `${sana(y.sana)} · ${(TUR_MATN[y.turi] || y.turi)}${y.mahsulotlar?.nomi ? ' · ' + y.mahsulotlar.nomi : ''}`;
+      $('tQulf').hidden = !y.qulf;
+      $('tMaydon').disabled = !!y.qulf;
+      $('tMaydon').hidden = !!y.qulf;
+      $('tSana').value = y.sana;
+      $('tMiqdorQism').hidden = !y.mahsulot_id && !y.miqdor;
+      $('tAvtoQism').hidden = !y.mahsulot_id && !y.avto_raqami;
+      $('tMiqdor').value = y.miqdor ?? '';
+      $('tNarx').value = y.narx ?? '';
+      $('tSumma').value = y.summa == null ? '' : tuz ? y.summa : Math.abs(y.summa);
+      $('tBelgi').textContent = tuz ? '(+ qarz oshadi, − kamayadi)' : Number(y.summa) < 0 ? '(qarzni kamaytiradi)' : '(qarzni oshiradi)';
+      $('tAvto').value = y.avto_raqami || '';
+      $('tIzoh').value = y.izoh || '';
+      $('tXato').textContent = '';
+      $('tXato').classList.remove('ok');
+      $('tahrir').hidden = false;
+      $('tahrir').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    $('tYop').addEventListener('click', () => { $('tahrir').hidden = true; tYozuv = null; });
+    $('tSumma').addEventListener('input', () => { tSummaQolda = true; });
+    ['tMiqdor', 'tNarx'].forEach(id => $(id).addEventListener('input', () => {
+      const m = son($('tMiqdor').value), n = son($('tNarx').value);
+      if (!tSummaQolda && m > 0 && n > 0) $('tSumma').value = Math.round(m * n * 100) / 100;
+    }));
+
+    async function tSaqla(ozgarish, xabar) {
+      const tugmalar = [$('tSaqla'), $('tQulfla')];
+      tugmalar.forEach(b => b.disabled = true);
+      const { error } = await db.from('yozuvlar').update(ozgarish).eq('id', tYozuv.id);
+      tugmalar.forEach(b => b.disabled = false);
+      if (error) {
+        $('tXato').textContent = /qulflangan/i.test(error.message)
+          ? 'Bu yozuv qulflangan, uni o\'zgartirib bo\'lmaydi' : 'Saqlanmadi: ' + error.message;
+        return;
+      }
+      const id = tYozuv.id;
+      await korsat(tanlangan);                       // yangilangan yozuvlar va qoldiq
+      const yangi = yozuvlar.find(y => y.id === id);
+      if (yangi) tahrirOch(yangi);
+      $('tXato').textContent = xabar;
+      $('tXato').classList.add('ok');
+    }
+
+    $('tahrir').addEventListener('submit', async () => {
+      if (!tYozuv || tYozuv.qulf) return;
+      const xato = $('tXato');
+      xato.textContent = '';
+      xato.classList.remove('ok');
+      const tuz = tYozuv.turi === 'tuzatish';
+      const sana_ = $('tSana').value;
+      if (!sana_) { xato.textContent = 'Sanani tanlang'; return; }
+      const ozg = { sana: sana_, izoh: $('tIzoh').value.trim() || null };
+      if (!$('tMiqdorQism').hidden) {
+        const m = son($('tMiqdor').value), n = son($('tNarx').value);
+        if (Number.isNaN(m) || (m !== null && m <= 0)) { xato.textContent = 'Miqdorni to\'g\'ri yozing'; return; }
+        if (Number.isNaN(n) || (n !== null && n < 0)) { xato.textContent = 'Narxni to\'g\'ri yozing'; return; }
+        ozg.miqdor = m; ozg.narx = n;
+      }
+      if (!$('tAvtoQism').hidden) ozg.avto_raqami = $('tAvto').value.trim() || null;
+      const s = son($('tSumma').value);
+      if (s === null || Number.isNaN(s) || (!tuz && s <= 0) || s === 0) { xato.textContent = 'Summani to\'g\'ri yozing'; return; }
+      ozg.summa = s;   // belgini (+/−) baza turiga qarab o'zi qo'yadi (tuzatishda — yozilganidek)
+      await tSaqla(ozg, '✅ Saqlandi');
+    });
+
+    $('tQulfla').addEventListener('click', async () => {
+      if (!tYozuv || tYozuv.qulf) return;
+      if (!confirm('Yozuv qulflansinmi? Qulflangandan keyin uni HECH KIM o\'zgartira olmaydi.')) return;
+      await tSaqla({ qulf: true }, '🔒 Qulflandi');
+    });
+
+    // 8) Havolada ?mijoz=ID bo'lsa, o'sha mijozni darhol ochamiz
     const oldin = mijozlar.find(m => m.id == new URLSearchParams(location.search).get('mijoz'));
     if (oldin) { qidir.value = oldin.nomi; korsat(oldin); }
   </script>

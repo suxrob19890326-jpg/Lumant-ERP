@@ -223,3 +223,4 @@ th.raqam { text-align: right; }
 input[type="date"] { min-width: 0; -webkit-appearance: none; appearance: none; }
 .ikki input[type="date"] { padding-left: 8px; padding-right: 8px; font-size: 15px; }
 .korsatkichlar { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
