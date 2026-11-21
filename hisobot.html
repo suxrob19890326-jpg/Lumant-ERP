@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<!-- Hisobot: qarzlar, kassa, davr bo'yicha sotuv va to'lovlar, mahsulotlar, qarzdorlar -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hisobot · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase kutubxonasi: bitta fayl, o'zimizning saytdan (tez yuklanadi) -->
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Hisobot</h1>
+  </header>
+
+  <!-- 1) Umumiy holat (hozirgi) -->
+  <section class="panel">
+    <div class="korsatkichlar">
+      <a class="korsatkich" href="#qarzdorlar">
+        <span>Mijozlar bizdan qarz</span>
+        <b id="k_debitor">…</b>
+        <small id="k_debitorSoni"></small>
+      </a>
+      <a class="korsatkich" href="#bizqarz">
+        <span>Biz qarzmiz / avanslar</span>
+        <b id="k_kreditor" class="manfiy">…</b>
+        <small id="k_kreditorSoni"></small>
+      </a>
+      <a class="korsatkich" href="kassa.html">
+        <span>Kassada</span>
+        <b id="k_kassa">…</b>
+        <small id="k_kassaTafsil"></small>
+      </a>
+    </div>
+    <p id="holat" class="xato"></p>
+  </section>
+
+  <!-- 2) Davr bo'yicha -->
+  <section class="panel">
+    <div class="turlar tort" id="davrlar">
+      <button type="button" data-d="bugun">Bugun</button>
+      <button type="button" data-d="hafta">7 kun</button>
+      <button type="button" data-d="oy">Shu oy</button>
+      <button type="button" data-d="otganoy">O'tgan oy</button>
+    </div>
+    <div class="ikki">
+      <label>Dan <input id="dan" type="date"></label>
+      <label>Gacha <input id="gacha" type="date"></label>
+    </div>
+    <div class="korsatkichlar">
+      <div class="korsatkich"><span>🚚 Sotuv</span><b id="d_sotuv">…</b><small id="d_sotuvSoni"></small></div>
+      <div class="korsatkich"><span>💵 To'lov keldi</span><b id="d_tolov" class="kirim">…</b><small id="d_tolovSoni"></small></div>
+      <div class="korsatkich"><span>⬇️ Xarid (olindi)</span><b id="d_xarid">…</b><small id="d_xaridSoni"></small></div>
+      <div class="korsatkich"><span>💸 Pul berildi</span><b id="d_pulber">…</b><small id="d_pulberSoni"></small></div>
+    </div>
+
+    <h2 class="kichik-sarlavha">Mahsulotlar bo'yicha sotuv</h2>
+    <div class="jadval-oyna">
+      <table>
+        <thead><tr><th>Mahsulot</th><th class="raqam">Miqdor</th><th class="raqam">Summa</th></tr></thead>
+        <tbody id="mahsulotSotuv"></tbody>
+      </table>
+    </div>
+    <button type="button" class="tugma-oddiy" id="csvSotuv">⬇️ Excel'ga yuklash</button>
+  </section>
+
+  <!-- 3) Qarzdorlar -->
+  <section class="panel" id="qarzdorlar">
+    <h2 class="kichik-sarlavha">Eng katta qarzdorlar</h2>
+    <input id="qidir" placeholder="Mijoz qidirish (lotin yoki kirill)..." autocomplete="off">
+    <div id="qarzRoyxat"></div>
+    <button type="button" class="tugma-oddiy" id="koproq" hidden>Yana ko'rsatish</button>
+    <button type="button" class="tugma-oddiy" id="csvQarz">⬇️ Barcha qarzlar — Excel</button>
+  </section>
+
+  <section class="panel" id="bizqarz">
+    <h2 class="kichik-sarlavha">Biz qarzmiz / mijoz avanslari</h2>
+    <div id="bizRoyxat"></div>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh, kunlarFarqi } from './db.js';
+
+    await loginShart();
+    const $ = (id) => document.getElementById(id);
+
+    // ---------- 1) Qarzlar va kassa ----------
+    let mijozlar = [];
+    const mj = await hammasi(() => db.from('mijoz_qoldiq').select('id, nomi, telefon, qoldiq, oxirgi_yozuv').order('id'));
+    if (mj.error) { $('holat').textContent = 'Xato: ' + mj.error.message; throw mj.error; }
+    mijozlar = mj.data.map(m => ({ ...m, qoldiq: Number(m.qoldiq) }));
+
+    const qarzdor = mijozlar.filter(m => m.qoldiq > 0).sort((a, b) => b.qoldiq - a.qoldiq);
+    const biz = mijozlar.filter(m => m.qoldiq < 0).sort((a, b) => a.qoldiq - b.qoldiq);
+    const jami = (r) => r.reduce((s, m) => s + m.qoldiq, 0);
+    $('k_debitor').textContent = pul(jami(qarzdor));
+    $('k_debitorSoni').textContent = qarzdor.length + ' ta mijoz';
+    $('k_kreditor').textContent = pul(-jami(biz));
+    $('k_kreditorSoni').textContent = biz.length + ' ta';
+
+    const kq = await db.from('kassa_qoldiq').select('kassa, qoldiq');
+    if (kq.error) {
+      $('k_kassa').textContent = '—';
+      $('k_kassaTafsil').textContent = 'kassa sozlanmagan';
+    } else {
+      const nom = { naqd: 'Naqd', karta: 'Karta', bank: 'Bank' };
+      $('k_kassa').textContent = pul(kq.data.reduce((s, r) => s + Number(r.qoldiq), 0));
+      $('k_kassaTafsil').textContent = kq.data.map(r => `${nom[r.kassa] || r.kassa}: ${pul(r.qoldiq)}`).join(' · ');
+    }
+
+    // ---------- 3) Qarzdorlar ro'yxati ----------
+    let korsat = 15;
+    function qator(m) {
+      const kun = m.oxirgi_yozuv ? kunlarFarqi(m.oxirgi_yozuv, bugun()) : null;
+      const eski = kun !== null && kun > 30;
+      return `<a class="yozuv bosiladi qator-havola" href="sverka.html?mijoz=${encodeURIComponent(m.id)}">
+        <div class="yuqori">
+          <span class="nomi">${toza(m.nomi)}</span>
+          <span class="summa ${m.qoldiq < 0 ? 'kirim' : ''}">${pul(Math.abs(m.qoldiq))}</span>
+        </div>
+        <div class="pastki">
+          <span>${m.telefon ? '📞 ' + toza(m.telefon) : ''}</span>
+          <span class="${eski ? 'manfiy' : ''}">${m.oxirgi_yozuv ? `oxirgi: ${sana(m.oxirgi_yozuv)}${kun > 0 ? ` (${kun} kun)` : ''}` : ''}</span>
+        </div>
+      </a>`;
+    }
+    function qarzChiz() {
+      const soz = $('qidir').value.trim();
+      const r = soz ? saralash(qarzdor.filter(m => mos(m.nomi, soz)), soz) : qarzdor;
+      $('qarzRoyxat').innerHTML = r.slice(0, korsat).map(qator).join('') ||
+        `<p class="soni">${soz ? 'Topilmadi' : 'Qarzdor yo\'q'}</p>`;
+      $('koproq').hidden = r.length <= korsat;
+    }
+    $('qidir').addEventListener('input', () => { korsat = 15; qarzChiz(); });
+    $('koproq').addEventListener('click', () => { korsat += 30; qarzChiz(); });
+    qarzChiz();
+    $('bizRoyxat').innerHTML = biz.slice(0, 20).map(qator).join('') || '<p class="soni">Yo\'q</p>';
+
+    $('csvQarz').addEventListener('click', () => {
+      csvYukla(`qarzlar-${bugun()}`,
+        ['Mijoz', 'Telefon', 'Qoldiq (so\'m)', 'Holat', 'Oxirgi yozuv'],
+        [...qarzdor, ...biz].map(m => [m.nomi, m.telefon || '', m.qoldiq,
+          m.qoldiq > 0 ? 'Mijoz qarz' : 'Biz qarz / avans', sana(m.oxirgi_yozuv)]));
+    });
+
+    // ---------- 2) Davr bo'yicha ----------
+    function davr(d) {
+      const b = bugun();
+      const [y, m] = b.split('-').map(Number);
+      const oyBoshi = (yy, mm) => `${yy}-${String(mm).padStart(2, '0')}-01`;
+      if (d === 'bugun') return [b, b];
+      if (d === 'hafta') return [kunQosh(b, -6), b];
+      if (d === 'oy') return [oyBoshi(y, m), b];
+      const [oy, oy_] = m === 1 ? [y - 1, 12] : [y, m - 1];
+      return [oyBoshi(oy, oy_), kunQosh(oyBoshi(y, m), -1)];
+    }
+    function davrTanla(d) {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.toggle('tanlangan', b.dataset.d === d));
+      [$('dan').value, $('gacha').value] = davr(d);
+      davrHisob();
+    }
+    $('davrlar').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-d]');
+      if (b) davrTanla(b.dataset.d);
+    });
+    ['dan', 'gacha'].forEach(id => $(id).addEventListener('change', () => {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.remove('tanlangan'));
+      davrHisob();
+    }));
+
+    let sotuvJadval = [];
+    let soralgan = 0;
+    async function davrHisob() {
+      const dan = $('dan').value, gacha = $('gacha').value;
+      if (!dan || !gacha) return;
+      const men = ++soralgan;
+      ['d_sotuv', 'd_tolov', 'd_xarid', 'd_pulber'].forEach(id => $(id).textContent = '…');
+      const { data, error } = await hammasi(() => db.from('yozuvlar')
+        .select('id, turi, miqdor, olchov, summa, mahsulot_id, mahsulotlar(nomi, olchov)')
+        .gte('sana', dan).lte('sana', gacha).order('id'));
+      if (men !== soralgan) return;
+      if (error) { $('holat').textContent = 'Xato: ' + error.message; return; }
+
+      const yig = (turi) => {
+        const r = data.filter(y => y.turi === turi);
+        return [r.reduce((s, y) => s + Math.abs(Number(y.summa || 0)), 0), r.length];
+      };
+      const qoy = (id, [s, n]) => { $(id).textContent = pul(s); $(id + 'Soni').textContent = n + ' ta yozuv'; };
+      qoy('d_sotuv', yig('yuk_berildi'));
+      qoy('d_tolov', yig('tolov_keldi'));
+      qoy('d_xarid', yig('mahsulot_olindi'));
+      qoy('d_pulber', yig('pul_berildi'));
+
+      const guruh = new Map();
+      for (const y of data.filter(y => y.turi === 'yuk_berildi')) {
+        const key = y.mahsulot_id ?? 0;
+        const g = guruh.get(key) || { nomi: y.mahsulotlar?.nomi || '(mahsulotsiz)', olchov: y.mahsulotlar?.olchov || y.olchov || '', miqdor: 0, summa: 0 };
+        g.miqdor += Number(y.miqdor || 0);
+        g.summa += Number(y.summa || 0);
+        guruh.set(key, g);
+      }
+      sotuvJadval = [...guruh.values()].sort((a, b) => b.summa - a.summa);
+      $('mahsulotSotuv').innerHTML = sotuvJadval.map(g => `<tr>
+          <td>${toza(g.nomi)}</td>
+          <td class="raqam">${pul(g.miqdor)} ${toza(g.olchov)}</td>
+          <td class="raqam">${pul(g.summa)}</td></tr>`).join('') ||
+        '<tr><td colspan="3" class="soni">Bu davrda sotuv yo\'q</td></tr>';
+    }
+    $('csvSotuv').addEventListener('click', () => {
+      csvYukla(`sotuv-${$('dan').value}_${$('gacha').value}`,
+        ['Mahsulot', 'Miqdor', 'O\'lchov', 'Summa (so\'m)'],
+        sotuvJadval.map(g => [g.nomi, g.miqdor, g.olchov, g.summa]));
+    });
+
+    davrTanla('oy');
+  </script>
+</body>
+</html>
