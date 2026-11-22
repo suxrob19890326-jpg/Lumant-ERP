@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Xodimlar va rollar: admin rol beradi, o'chiradi; rahbar ko'radi -->
+<!-- Xodimlar va rollar: admin xodim qo'shadi, rol va parol beradi, o'chiradi; rahbar ko'radi -->
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
@@ -26,13 +26,20 @@
     <div id="royxat"></div>
   </section>
 
+  <form class="panel" id="yangi" autocomplete="off" hidden>
+    <h2 class="kichik-sarlavha">➕ Yangi xodim qo'shish</h2>
+    <label>Email (login) <input id="yEmail" type="email" inputmode="email" autocapitalize="off" placeholder="ali@lumant.uz" required></label>
+    <label>Parol (kamida 6 belgi)
+      <input id="yParol" type="text" autocapitalize="off" minlength="6" required>
+    </label>
+    <label>Ism familiya <input id="yIsm" placeholder="Ali Valiyev"></label>
+    <label>Rol <select id="yRol"></select></label>
+    <button type="submit" id="ySaqla">Xodimni qo'shish</button>
+    <p class="xato" id="yXabar"></p>
+    <p class="tushuntir">Email va parolni xodimga bering — u shu bilan saytga kiradi.</p>
+  </form>
+
   <section class="panel">
-    <h2 class="kichik-sarlavha">Yangi xodim qo'shish</h2>
-    <ol class="yoriqnoma">
-      <li>Supabase → <b>Authentication → Users → Add user → Create new user</b>.</li>
-      <li>Xodimning emaili va parolini yozing, <b>Auto Confirm User</b> belgisini qo'ying.</li>
-      <li>Shu sahifani yangilang — xodim ro'yxatda <b>rolsiz</b> paydo bo'ladi. Unga rol bering.</li>
-    </ol>
     <h2 class="kichik-sarlavha">Rollar nima qila oladi</h2>
     <table class="rollar">
       <tr><th>Admin</th><td>Hammasi + xodimlarga rol berish</td></tr>
@@ -85,9 +92,58 @@
             <label class="belgi"><input type="checkbox" data-maydon="faol" ${x.faol ? 'checked' : ''}
               ${!admin || x.user_id === user.id ? 'disabled' : ''}> Faol</label>
           </div>
+          ${admin ? '<button type="button" class="tugma-oddiy parol-tugma" data-parol>🔑 Parolni almashtirish</button>' : ''}
           <p class="xato" data-xabar></p>
         </div>`).join('');
     }
+
+    // Bazada 08_xodim_qoshish.sql hali yo'q bo'lsa
+    const funksiyaYoq = (e) => /Could not find the function|PGRST202|does not exist/i.test(e.message || '') || e.code === 'PGRST202';
+    const SQL_KERAK = 'Bu imkoniyat hali yoqilmagan: Supabase → SQL Editor\'da supabase/08_xodim_qoshish.sql ni ishga tushiring.';
+
+    // ---------- Yangi xodim ----------
+    if (admin) {
+      $('yangi').hidden = false;
+      $('yRol').innerHTML = Object.entries(ROL_NOMI)
+        .map(([k, v]) => `<option value="${k}" ${k === 'sotuvchi' ? 'selected' : ''}>${v}</option>`).join('') +
+        '<option value="">— hozircha rolsiz —</option>';
+      $('yangi').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const xabar = $('yXabar');
+        xabar.classList.remove('ok');
+        const email = $('yEmail').value.trim().toLowerCase(), parol = $('yParol').value;
+        if (parol.length < 6) { xabar.textContent = 'Parol kamida 6 ta belgidan iborat bo\'lsin'; return; }
+        $('ySaqla').disabled = true;
+        xabar.textContent = 'Qo\'shilmoqda...';
+        const { error } = await db.rpc('xodim_yarat', {
+          p_email: email, p_parol: parol, p_ism: $('yIsm').value.trim(), p_rol: $('yRol').value || null,
+        });
+        $('ySaqla').disabled = false;
+        if (error) { xabar.textContent = funksiyaYoq(error) ? SQL_KERAK : error.message; return; }
+        xabar.innerHTML = `✅ Qo'shildi. Login: <b>${toza(email)}</b> · Parol: <b>${toza(parol)}</b>`;
+        xabar.classList.add('ok');
+        $('yEmail').value = $('yParol').value = $('yIsm').value = '';
+        yukla();
+      });
+    }
+
+    // ---------- Parolni almashtirish ----------
+    $('royxat').addEventListener('click', async (e) => {
+      const t = e.target.closest('[data-parol]');
+      if (!t || !admin) return;
+      const div = t.closest('.xodim');
+      const x = xodimlar.find(x => x.user_id === div.dataset.id);
+      const parol = prompt(`${x.email} uchun yangi parol (kamida 6 belgi):`);
+      if (parol === null) return;
+      const xabar = div.querySelector('[data-xabar]');
+      xabar.classList.remove('ok');
+      if (parol.length < 6) { xabar.textContent = 'Parol kamida 6 ta belgidan iborat bo\'lsin'; return; }
+      xabar.textContent = 'Saqlanmoqda...';
+      const { error } = await db.rpc('xodim_parol', { p_user: x.user_id, p_parol: parol });
+      if (error) { xabar.textContent = funksiyaYoq(error) ? SQL_KERAK : error.message; return; }
+      xabar.innerHTML = `✅ Yangi parol: <b>${toza(parol)}</b>`;
+      xabar.classList.add('ok');
+    });
 
     async function saqla(div, ozgarish) {
       const id = div.dataset.id;

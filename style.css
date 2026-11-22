@@ -234,6 +234,7 @@ fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
 .xodim-maydon input, .xodim-maydon select { margin: 0; min-width: 0; font-size: 15px; padding: 10px; }
 .xodim-maydon .belgi { margin: 0; white-space: nowrap; }
 .xodim .xato { margin: 4px 0 0; min-height: 0; font-size: 13px; }
+.xodim .parol-tugma { margin: 8px 0 0; padding: 8px; font-size: 14px; }
 @media (max-width: 420px) { .xodim-maydon { grid-template-columns: 1fr 1fr; } .xodim-maydon input[data-maydon="ism"] { grid-column: 1 / -1; } }
 .yoriqnoma { padding-left: 20px; line-height: 1.5; margin-top: 0; }
 .rollar { width: 100%; border-collapse: collapse; font-size: 14px; }
