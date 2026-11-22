@@ -320,3 +320,22 @@ tr.yetmaydi td { background: #fdecea; }
 #tahrirQism { margin-top: 12px; }
 #tahrirQism summary { cursor: pointer; color: #E8731A; font-weight: 600; padding: 8px 0; }
 .kun input { min-width: 0; width: 100%; box-sizing: border-box; }
+
+/* ---------- Buyurtmalar (2) ---------- */
+.jarayon { height: 6px; background: #eee3da; border-radius: 3px; overflow: hidden; margin: 6px 0 2px; }
+.jarayon i { display: block; height: 100%; background: #1e8449; }
+.buyurtma.otgan { background: #fdecea; border-radius: 8px; padding-left: 8px; padding-right: 8px; }
+.buyurtma .reyslar { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; font-size: 13px; }
+.buyurtma .reyslar a { color: #5A2E0E; }
+.buyurtma-tugma { display: flex; gap: 6px; margin-top: 8px; }
+.buyurtma-tugma .tugma-ikkinchi { flex: 1; }
+.buyurtma-tugma button { width: auto; flex: 0 0 44px; padding: 10px 0; }
+.sigim { font-size: 12px; }
+.sigim input { padding: 8px 10px; font-size: 15px; }
+.hafta-kun { display: grid; grid-template-columns: 96px 1fr auto; gap: 10px; align-items: center; width: 100%; margin: 0 0 6px;
+  background: white; color: #5A2E0E; border: 1px solid #eee3da; padding: 10px; text-align: left; font-size: 14px; }
+.hafta-kun small { display: block; color: #8a6a50; font-size: 12px; font-weight: 400; }
+.hafta-chiziq { height: 8px; background: #f3ebe4; border-radius: 4px; overflow: hidden; }
+.hafta-chiziq i { display: block; height: 100%; background: #E8731A; }
+.xavf-ogoh { background: #fdecea; color: #c0392b; font-weight: 600; }
+@media print { .reja-jadval td { vertical-align: top; } }

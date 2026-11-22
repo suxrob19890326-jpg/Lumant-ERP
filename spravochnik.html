@@ -58,6 +58,8 @@
       <label id="valyutaQism" hidden>Hisob valyutasi
         <select id="f_valyuta"><option value="UZS">So'm</option><option value="USD">Dollar ($)</option></select>
       </label>
+      <label id="limitQism" hidden>Kredit limiti (qarz shundan oshsa — ogohlantiradi)
+        <input id="f_limit" inputmode="decimal" placeholder="bo'sh — limitsiz"></label>
       <p id="f_qoldiq" class="soni"></p>
       <div id="kabinetQism" class="maxsus-narx" hidden>
         <h3 class="kichik-sarlavha">🔗 Mijoz kabineti</h3>
@@ -138,7 +140,7 @@
     }
 
     // ---------- Yuklash ----------
-    let mijozlar = [], mahsulotlar = [], turkumBor = true, valyutaBor = false, minBor = false;
+    let mijozlar = [], mahsulotlar = [], turkumBor = true, valyutaBor = false, minBor = false, limitBor = false;
     async function yukla() {
       const [m, q] = await Promise.all([
         hammasi(() => db.from('mijozlar').select('*').order('nomi').order('id')),   // '*' — valyuta (09) bo'lsa
@@ -151,6 +153,7 @@
       if (xato) { $('holat').textContent = 'Xato: ' + xato.message; return false; }
       const qoldiq = new Map(q.data.map(r => [r.id, r]));
       valyutaBor = m.data.length > 0 && 'valyuta' in m.data[0];
+      limitBor = m.data.length > 0 && 'kredit_limit' in m.data[0];
       mijozlar = m.data.map(r => ({ ...r, qoldiq: Number(qoldiq.get(r.id)?.qoldiq ?? 0), oxirgi_yozuv: qoldiq.get(r.id)?.oxirgi_yozuv || null }));
       $('mijozNomlari').innerHTML = mijozlar.map(x => `<option value="${toza(x.nomi)}">`).join('');
       mahsulotlar = p.data;
@@ -218,6 +221,9 @@
       $('f_narx').value = x?.oxirgi_narx ? pul(x.oxirgi_narx) : '';
       $('f_turkum').value = x?.turkum || '';
       $('valyutaQism').hidden = !(mj && valyutaBor);
+      $('limitQism').hidden = !(mj && limitBor);
+      $('f_limit').value = x?.kredit_limit != null ? pul(x.kredit_limit) : '';
+      $('f_limit').disabled = !['admin', 'rahbar'].includes(user.rol);
       $('f_valyuta').value = valyuta(x);
       $('f_valyuta').disabled = !!x?.oxirgi_yozuv;   // yozuvi bor mijozning valyutasi o'zgarmaydi
       narxlarOch(mj ? x : null);
@@ -277,6 +283,11 @@
         jadval = 'mijozlar';
         qator = { nomi, telefon: $('f_telefon').value.trim() || null, izoh: $('f_izoh').value.trim() || null };
         if (valyutaBor && !$('f_valyuta').disabled) qator.valyuta = $('f_valyuta').value;
+        if (limitBor && !$('f_limit').disabled) {
+          const l = son($('f_limit').value);
+          if (Number.isNaN(l) || l < 0) { xato.textContent = 'Kredit limitini to\'g\'ri yozing'; return; }
+          qator.kredit_limit = l;
+        }
       } else {
         jadval = 'mahsulotlar';
         const narx = son($('f_narx').value);

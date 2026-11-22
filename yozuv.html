@@ -133,7 +133,7 @@
       internetsiz = true;
       mj.data = k.mijozlar; mh.data = k.mahsulotlar; mn.data = k.maxsus;
     } else {
-      try { localStorage[KESH] = JSON.stringify({ mijozlar: mj.data.map(m => ({ id: m.id, nomi: m.nomi, qoldiq: m.qoldiq, valyuta: m.valyuta })),
+      try { localStorage[KESH] = JSON.stringify({ mijozlar: mj.data.map(m => ({ id: m.id, nomi: m.nomi, qoldiq: m.qoldiq, valyuta: m.valyuta, kredit_limit: m.kredit_limit })),
         mahsulotlar: mh.data, maxsus: mn.data || [] }); } catch {}
     }
     $('xato').textContent = internetsiz ? '📴 Internet yo\'q — yozuvlar telefonda saqlanadi va internet qaytganda o\'zi yuboriladi' : '';
@@ -185,8 +185,10 @@
       mijoz = m;
       qidir.value = m.nomi;
       takliflar.hidden = true;
-      $('mijozHolat').textContent = 'Hozirgi qoldiq: ' + pul(m.qoldiq) + ' ' + belgi(valyuta(m)) +
-        (usd() ? ' · hisob dollarda' : '');
+      const lim = m.kredit_limit != null ? Number(m.kredit_limit) : null, oshdi = lim !== null && Number(m.qoldiq) > lim;
+      $('mijozHolat').textContent = (oshdi ? '⛔ Kredit limiti oshgan! ' : '') + 'Hozirgi qoldiq: ' + pul(m.qoldiq) + ' ' + belgi(valyuta(m)) +
+        (lim !== null ? ` · limit ${pul(lim)}` : '') + (usd() ? ' · hisob dollarda' : '');
+      $('mijozHolat').className = oshdi ? 'ogoh xavf-ogoh' : 'soni';
       // Dollar mijoz — faqat Dollar kassa; so'm mijoz — Dollar kassasiz
       document.querySelectorAll('#kassalar button').forEach(b => { b.hidden = usd() !== (b.dataset.k === 'dollar'); });
       kassaTanla(usd() ? 'dollar' : (kassa === 'dollar' ? 'naqd' : kassa));
@@ -275,6 +277,7 @@
       }
       if (!(summa > 0)) { xato.textContent = 'Summani to\'g\'ri yozing'; return; }
       if (!MAHSULOTLI.includes(turi)) yozuv.kassa = kassa;   // kassaga o'zi tushadi
+      if (buyurtma && turi === 'yuk_berildi') yozuv.buyurtma_id = buyurtma.id;   // 12-SQL: reys buyurtmaga bog'lanadi
       yozuv.summa = summa;   // belgini (+/−) baza o'zi qo'yadi
       if (crypto.randomUUID) yozuv.client_id = crypto.randomUUID();   // internetsiz navbatda ikki marta tushmasin
 
@@ -283,10 +286,10 @@
       tugma.textContent = 'Saqlanmoqda...';
       // Bazada yangi ustun hali yo'q bo'lsa (kassa — 03, client_id — 11) — o'sha ustunsiz qayta urinamiz
       let yangi, error, kassasiz = false;
-      for (let urinish = 0; urinish < 3; urinish++) {
+      for (let urinish = 0; urinish < 4; urinish++) {
         ({ data: yangi, error } = await db.from('yozuvlar').insert(yozuv).select('id').single());
         const ustunYoq = error && (error.code === 'PGRST204' || error.code === '42703' || /column|does not exist/i.test(error.message || ''));
-        const ustun = ustunYoq && ['kassa', 'client_id'].find(u => u in yozuv && (error.message || '').includes(u));
+        const ustun = ustunYoq && ['kassa', 'client_id', 'buyurtma_id'].find(u => u in yozuv && (error.message || '').includes(u));
         if (!ustun) break;
         delete yozuv[ustun];
         if (ustun === 'kassa') kassasiz = true;
@@ -321,7 +324,13 @@
       mijoz.qoldiq = qoldiq;
       // Buyurtmadan ochilgan bo'lsa — buyurtma bajarildi
       let buyIzoh = '';
-      if (buyurtma && yangi?.id) {
+      if (buyurtma && yangi?.id && 'buyurtma_id' in yozuv) {
+        // 12-SQL: baza o'zi hisoblaydi — natijani ko'rsatamiz
+        const { data: b } = await db.from('buyurtmalar').select('miqdor, yetkazildi, holat').eq('id', buyurtma.id).maybeSingle();
+        buyIzoh = b ? (b.holat === 'bajarildi' ? ' · Buyurtma to\'liq yetkazildi ✅'
+          : ` · Buyurtma: ${pul(b.yetkazildi)} / ${pul(b.miqdor)} yetkazildi, qolgani ${pul(b.miqdor - b.yetkazildi)}`) : '';
+        buyurtma = null;
+      } else if (buyurtma && yangi?.id) {
         const { error: be } = await db.from('buyurtmalar').update({ holat: 'bajarildi', yozuv_id: yangi.id }).eq('id', buyurtma.id);
         buyIzoh = be ? ' · Buyurtma belgilanmadi: ' + be.message : ' · Buyurtma bajarildi ✅';
         buyurtma = null;
@@ -370,12 +379,14 @@
         mijozTanla(bm);
         $('mahsulot').value = b.mahsulot_id;
         $('mahsulot').dispatchEvent(new Event('change'));
-        $('miqdor').value = pul(b.miqdor);
+        const qoldi = 'yetkazildi' in b ? Math.max(0, Number(b.miqdor) - Number(b.yetkazildi)) : Number(b.miqdor);
+        $('miqdor').value = pul(qoldi);
         if (b.narx != null) $('narx').value = pul(b.narx);
         $('avto').value = b.avto_raqami || '';
         $('izoh').value = [b.manzil, b.izoh].filter(Boolean).join(' · ');
         hisobla();
-        $('xato').textContent = `📋 Buyurtma № ${b.id} — tekshirib, "Saqlash" ni bosing`;
+        $('xato').textContent = `📋 Buyurtma № ${b.id}` + (Number(b.yetkazildi) > 0 ? ` (${pul(b.yetkazildi)} / ${pul(b.miqdor)} yetkazilgan)` : '') +
+          ` — shu reysdagi miqdorni yozib, "Saqlash" ni bosing`;
       }
     }
   </script>

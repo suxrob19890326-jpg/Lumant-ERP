@@ -18,24 +18,28 @@ export function navbatgaQosh(yozuv, nomi, buyurtma = null) {
 }
 
 // Yuboradi. Qaytaradi: { yuborildi, qoldi, xatolar: [matn] }
-let ishlayapti = false;
+let ishlayapti = false, yana = false;
 export async function navbatYubor(db) {
-  if (ishlayapti || !navigator.onLine) return { yuborildi: 0, qoldi: navbat().length, xatolar: [] };
+  if (ishlayapti) { yana = true; return { yuborildi: 0, qoldi: navbat().length, xatolar: [] }; }   // tugagach yana bir marta
+  if (!navigator.onLine) return { yuborildi: 0, qoldi: navbat().length, xatolar: [] };
   ishlayapti = true;
+  yana = false;
   let yuborildi = 0;
   const xatolar = [];
   try {
     for (const n of navbat()) {
-      let y = { ...n.yozuv };
-      let { error } = await db.from('yozuvlar').insert(y);
-      if (error && /client_id/.test(error.message || '') && (error.code === 'PGRST204' || error.code === '42703')) {
-        delete y.client_id;                      // 11-SQL hali yo'q
+      let y = { ...n.yozuv }, error;
+      for (let urinish = 0; urinish < 4; urinish++) {   // bazada hali yo'q ustun bo'lsa — usiz
         ({ error } = await db.from('yozuvlar').insert(y));
+        const ustunYoq = error && (error.code === 'PGRST204' || error.code === '42703');
+        const ustun = ustunYoq && ['client_id', 'buyurtma_id', 'kassa'].find(u => u in y && (error.message || '').includes(u));
+        if (!ustun) break;
+        delete y[ustun];
       }
       if (error && tarmoqXatosi(error)) break;   // internet yana uzildi — keyinroq
       if (!error || error.code === '23505') {   // 23505 — avval yetib borgan (client_id takrori)
         yuborildi++;
-        if (n.buyurtma && y.client_id) {        // buyurtmadan kiritilgan bo'lsa — buyurtma bajarildi
+        if (n.buyurtma && y.client_id && !('buyurtma_id' in y)) {   // 12-SQL'siz: buyurtmani qo'lda belgilaymiz
           const { data: yz } = await db.from('yozuvlar').select('id').eq('client_id', y.client_id).maybeSingle();
           if (yz) await db.from('buyurtmalar').update({ holat: 'bajarildi', yozuv_id: yz.id }).eq('id', n.buyurtma).eq('holat', 'yangi');
         }
@@ -44,5 +48,10 @@ export async function navbatYubor(db) {
     }
   } finally { ishlayapti = false; }
   if (xatolar.length) { try { localStorage.lumant_navbat_xato = JSON.stringify(xatolar); } catch {} }
+  // Yuborish paytida yana so'ralgan bo'lsa (masalan, internet aynan shu payt qaytdi) — qayta urinamiz
+  if (yana && navbat().length) {
+    const keyin = await navbatYubor(db);
+    return { yuborildi: yuborildi + keyin.yuborildi, qoldi: keyin.qoldi, xatolar: [...xatolar, ...keyin.xatolar] };
+  }
   return { yuborildi, qoldi: navbat().length, xatolar };
 }

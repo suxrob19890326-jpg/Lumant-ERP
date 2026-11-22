@@ -96,8 +96,8 @@
       $('buyQism').hidden = !k.buyurtmalar.length;
       $('buyurtmalar').innerHTML = k.buyurtmalar.map(x => `<div class="yozuv buyurtma ${x.holat}">
         <div class="yuqori"><span class="sana">${sana(x.sana)} ${toza(x.vaqt || '')}</span><span class="nomi">${toza(x.mahsulot)}</span>
-        <span class="summa">${pul(x.miqdor)} ${toza(x.olchov || '')}</span></div>
-        <div class="pastki"><span></span><span class="q">${HOLAT[x.holat] || ''}</span></div></div>`).join('');
+        <span class="summa">${Number(x.yetkazildi) > 0 && x.holat === 'yangi' ? pul(x.yetkazildi) + ' / ' : ''}${pul(x.miqdor)} ${toza(x.olchov || '')}</span></div>
+        <div class="pastki"><span></span><span class="q">${x.holat === 'yangi' && Number(x.yetkazildi) > 0 ? '🚚 Yetkazilmoqda' : HOLAT[x.holat] || ''}</span></div></div>`).join('');
       chiz();
     }
     function chiz() {
