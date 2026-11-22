@@ -45,14 +45,19 @@ alter table yozuvlar add constraint yozuvlar_kassa_check check (kassa in ('naqd'
 alter table kassa_yozuvlar drop constraint if exists kassa_yozuvlar_kassa_check;
 alter table kassa_yozuvlar add constraint kassa_yozuvlar_kassa_check check (kassa in ('naqd','karta','bank','dollar'));
 
-create or replace view kassa_qoldiq with (security_invoker = on) as
+-- (o'chirib qayta yaratiladi: bazadagi eski ko'rinishda boshqa ustunlar bo'lishi mumkin)
+drop view if exists kassa_qoldiq;
+create view kassa_qoldiq with (security_invoker = on) as
 select k.kassa,
        coalesce(sum(case when y.yonalish = 'kirim' then y.summa else -y.summa end), 0) as qoldiq
 from (values ('naqd'), ('karta'), ('bank'), ('dollar')) as k(kassa)
 left join kassa_yozuvlar y on y.kassa = k.kassa
 group by k.kassa;
+grant select on kassa_qoldiq to authenticated;
 
-create or replace view mijoz_qoldiq with (security_invoker = on) as
+-- (o'chirib qayta yaratiladi: bazadagi eski ko'rinishda boshqa ustunlar bo'lishi mumkin)
+drop view if exists mijoz_qoldiq;
+create view mijoz_qoldiq with (security_invoker = on) as
 select m.id, m.nomi, m.telefon,
        coalesce(sum(y.summa), 0) as qoldiq,
        max(y.sana)               as oxirgi_yozuv,
@@ -60,6 +65,7 @@ select m.id, m.nomi, m.telefon,
 from mijozlar m
 left join yozuvlar y on y.mijoz_id = m.id
 group by m.id;
+grant select on mijoz_qoldiq to authenticated;
 
 -- To'lov kassasi mijoz valyutasiga mos bo'lsin
 create or replace function d_valyuta_kassa() returns trigger

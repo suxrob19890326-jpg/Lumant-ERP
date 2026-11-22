@@ -154,7 +154,9 @@ grant execute on function kabinet_buyurtma(uuid, date, bigint, numeric, text, te
 -- ---------------------------------------------------------------------
 alter table mahsulotlar add column if not exists min_qoldiq numeric check (min_qoldiq >= 0);
 
-create or replace view ombor_qoldiq with (security_invoker = on) as
+-- (o'chirib qayta yaratiladi: bazadagi eski ko'rinishda boshqa ustunlar bo'lishi mumkin)
+drop view if exists ombor_qoldiq;
+create view ombor_qoldiq with (security_invoker = on) as
 select m.id, m.nomi, m.olchov, m.turkum,
        coalesce(sum(case when h.yonalish = 'kirim' then h.miqdor else -h.miqdor end), 0) as qoldiq,
        count(h.id) as harakatlar,
@@ -163,6 +165,7 @@ select m.id, m.nomi, m.olchov, m.turkum,
 from mahsulotlar m
 left join ombor_harakat h on h.mahsulot_id = m.id
 group by m.id;
+grant select on ombor_qoldiq to authenticated;
 
 
 -- ---------------------------------------------------------------------

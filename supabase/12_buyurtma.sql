@@ -15,7 +15,9 @@ alter table mijozlar    add column if not exists kredit_limit numeric check (kre
 create index if not exists yozuvlar_buyurtma_idx on yozuvlar (buyurtma_id) where buyurtma_id is not null;
 
 -- Mijoz qoldig'ida kredit limiti ham ko'rinsin (yozuv kiritishda ogohlantirish uchun)
-create or replace view mijoz_qoldiq with (security_invoker = on) as
+-- (o'chirib qayta yaratiladi: bazadagi eski ko'rinishda boshqa ustunlar bo'lishi mumkin)
+drop view if exists mijoz_qoldiq;
+create view mijoz_qoldiq with (security_invoker = on) as
 select m.id, m.nomi, m.telefon,
        coalesce(sum(y.summa), 0) as qoldiq,
        max(y.sana)               as oxirgi_yozuv,
@@ -24,6 +26,7 @@ select m.id, m.nomi, m.telefon,
 from mijozlar m
 left join yozuvlar y on y.mijoz_id = m.id
 group by m.id;
+grant select on mijoz_qoldiq to authenticated;
 
 -- Buyurtmaning yetkazilgan miqdori va holatini qayta hisoblash
 create or replace function buyurtma_hisobla(p_id bigint) returns void
