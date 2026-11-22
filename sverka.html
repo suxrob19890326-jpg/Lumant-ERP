@@ -28,8 +28,11 @@
     <input id="qidir" placeholder="Mijoz nomini yozing (lotin yoki kirill)..." autocomplete="off">
     <ul id="takliflar" class="takliflar" hidden></ul>
     <p id="holat" class="soni">Mijozlar yuklanmoqda...</p>
+    <!-- Mijoz tanlanmaganda: hamma mijozlar — qarzdorlar, haqdorlar, balansi nol -->
+    <div id="hammaRoyxat" class="hamma-royxat"></div>
 
     <div id="natija" hidden>
+      <button type="button" id="royxatga" class="tugma-oddiy">📋 Barcha mijozlar ro'yxati</button>
       <div class="qoldiq">
         <span id="mijozNomi"></span>
         <b id="qoldiq"></b>
@@ -119,8 +122,80 @@
     const holat = $('holat');
     const mj = await hammasi(() => db.from('mijoz_qoldiq').select('*').order('nomi').order('id'));
     if (mj.error) { holat.textContent = 'Xato: ' + mj.error.message; throw mj.error; }
-    const mijozlar = mj.data;
+    const mijozlar = mj.data.map(m => ({ ...m, qoldiq: Number(m.qoldiq) }));
     holat.textContent = mijozlar.length + ' ta mijoz';
+
+    // 1b) Hamma mijozlar ro'yxati: katta qarzdordan kichigigacha, keyin haqdorlar (biz qarzmiz / avans),
+    //     keyin balansi nol bo'lganlar. Bosilsa — o'sha mijozning oldi-berdisi (sverka) ochiladi.
+    const NOL = 0.005;
+    function royxatChiz(soz = '') {
+      const r = soz ? mijozlar.filter(m => mos(m.nomi, soz)) : mijozlar;
+      const qator = (m, i) => {
+        const q = m.qoldiq;
+        return `<button type="button" class="mijoz-qator" data-id="${toza(m.id)}">
+          <span class="raqam-tartib">${i + 1}</span>
+          <span class="mijoz-nom">${toza(m.nomi)}<small>${[m.telefon && '📞 ' + toza(m.telefon), m.oxirgi_yozuv && 'oxirgi: ' + sana(m.oxirgi_yozuv)].filter(Boolean).join(' · ')}</small></span>
+          <b class="${q > NOL ? 'manfiy' : q < -NOL ? 'kirim' : 'soni'}">${Math.abs(q) < NOL ? '0' : pul(Math.abs(q))}</b>
+        </button>`;
+      };
+      const html = [];
+      for (const v of ['UZS', 'USD']) {
+        const bu = r.filter(m => valyuta(m) === v);
+        if (!bu.length) continue;
+        const b = belgi(v), d = v === 'USD' ? ' (dollar hisobidagilar)' : '';
+        const qarz = bu.filter(m => m.qoldiq > NOL).sort((a, c) => c.qoldiq - a.qoldiq);
+        const haq = bu.filter(m => m.qoldiq < -NOL).sort((a, c) => a.qoldiq - c.qoldiq);
+        const nol = bu.filter(m => Math.abs(m.qoldiq) <= NOL).sort((a, c) => a.nomi.localeCompare(c.nomi));
+        const jami = (x) => pul(Math.abs(x.reduce((s, m) => s + m.qoldiq, 0)));
+        if (qarz.length) html.push(`<details open class="guruh qarzdor"><summary>🔴 Qarzdorlar${d} — ${qarz.length} ta · jami <b>${jami(qarz)} ${b}</b></summary>${qarz.map(qator).join('')}</details>`);
+        if (haq.length) html.push(`<details open class="guruh haqdor"><summary>🟢 Haqdorlar (biz qarzmiz / avans)${d} — ${haq.length} ta · jami <b>${jami(haq)} ${b}</b></summary>${haq.map(qator).join('')}</details>`);
+        if (nol.length) html.push(`<details open class="guruh nol"><summary>⚪ Balansi nol${d} — ${nol.length} ta</summary>${nol.map(qator).join('')}</details>`);
+      }
+      $('hammaRoyxat').innerHTML = html.join('') || `<p class="soni">${soz ? 'Topilmadi' : 'Mijoz yo\'q'}</p>` +
+        (mijozlar.length ? '' : '');
+      if (mijozlar.length) $('hammaRoyxat').insertAdjacentHTML('beforeend',
+        '<button type="button" class="tugma-oddiy" id="royxatCsv">⬇️ Ro\'yxatni Excel\'ga yuklash</button>');
+    }
+    $('hammaRoyxat').addEventListener('click', (e) => {
+      if (e.target.closest('#royxatCsv')) {
+        const tart = (v) => { const bu = mijozlar.filter(m => valyuta(m) === v);
+          return [...bu.filter(m => m.qoldiq > NOL).sort((a, c) => c.qoldiq - a.qoldiq), ...bu.filter(m => m.qoldiq < -NOL).sort((a, c) => a.qoldiq - c.qoldiq),
+                  ...bu.filter(m => Math.abs(m.qoldiq) <= NOL).sort((a, c) => a.nomi.localeCompare(c.nomi))]; };
+        csvYukla(`mijozlar-${bugun()}`, ['Mijoz', 'Telefon', 'Holat', 'Summa', 'Valyuta', 'Oxirgi yozuv'],
+          [...tart('UZS'), ...tart('USD')].map(m => [m.nomi, m.telefon || '',
+            m.qoldiq > NOL ? 'Qarzdor' : m.qoldiq < -NOL ? 'Haqdor' : 'Nol', Math.abs(m.qoldiq), belgi(valyuta(m)), sana(m.oxirgi_yozuv)]));
+        return;
+      }
+      const b = e.target.closest('[data-id]');
+      if (b) tanla(mijozlar.find(m => m.id == b.dataset.id), true);
+    });
+    function tanla(m, tarixga) {
+      if (!m) return;
+      qidir.value = m.nomi;
+      takliflar.hidden = true;
+      $('hammaRoyxat').hidden = true;
+      if (tarixga) history.pushState({ mijoz: m.id }, '', 'sverka.html?mijoz=' + encodeURIComponent(m.id));
+      korsat(m);
+      scrollTo(0, 0);
+    }
+    function royxatgaQayt(tarixga) {
+      soralgan++;   // yuklanayotgan sverka javobi endi kerak emas
+      tanlangan = null;
+      $('natija').hidden = true;
+      $('tahrir').hidden = true;
+      $('hammaRoyxat').hidden = false;
+      qidir.value = '';
+      takliflar.hidden = true;
+      holat.textContent = mijozlar.length + ' ta mijoz';
+      royxatChiz();
+      if (tarixga) history.pushState({}, '', 'sverka.html');
+    }
+    $('royxatga').addEventListener('click', () => royxatgaQayt(true));
+    // Telefonning "orqaga" tugmasi: sverkadan ro'yxatga qaytadi
+    window.addEventListener('popstate', (e) => {
+      const m = e.state?.mijoz && mijozlar.find(x => x.id == e.state.mijoz);
+      if (m) tanla(m, false); else royxatgaQayt(false);
+    });
 
     // 2) Tez qidiruv
     const qidir = $('qidir');
@@ -128,6 +203,8 @@
 
     qidir.addEventListener('input', () => {
       const soz = qidir.value.trim();
+      // Ro'yxat ochiq bo'lsa — qidiruv ro'yxatning o'zini saralaydi
+      if (!$('hammaRoyxat').hidden) { takliflar.hidden = true; royxatChiz(soz); return; }
       if (!soz) { takliflar.hidden = true; return; }
       const topildi = saralash(mijozlar.filter(m => mos(m.nomi, soz)), soz).slice(0, 15);
       takliflar.innerHTML = topildi.map(m =>
@@ -140,10 +217,8 @@
       const li = e.target.closest('li[data-id]');
       if (!li) return;
       const mijoz = mijozlar.find(m => m.id == li.dataset.id);
-      qidir.value = mijoz.nomi;
-      takliflar.hidden = true;
       qidir.blur();
-      korsat(mijoz);
+      tanla(mijoz, true);
     });
 
     // 3) Tanlangan mijozning barcha yozuvlari
@@ -165,6 +240,8 @@
       yozuvlar = data;
 
       const jami = yozuvlar.reduce((s, y) => s + Number(y.summa || 0), 0);
+      mijoz.qoldiq = jami;   // ro'yxatga qaytganda yangi qoldiq ko'rinsin (tahrirdan keyin ham)
+      mijoz.oxirgi_yozuv = yozuvlar.length ? yozuvlar[yozuvlar.length - 1].sana : null;
       $('mijozNomi').textContent = mijoz.nomi;
       $('qoldiq').textContent = pul(jami) + ' ' + belgi(valyuta(mijoz));
       $('izohQoldiq').textContent =
@@ -415,7 +492,8 @@
 
     // 8) Havolada ?mijoz=ID bo'lsa, o'sha mijozni darhol ochamiz
     const oldin = mijozlar.find(m => m.id == new URLSearchParams(location.search).get('mijoz'));
-    if (oldin) { qidir.value = oldin.nomi; korsat(oldin); }
+    if (oldin) { history.replaceState({ mijoz: oldin.id }, '', location.href); tanla(oldin, false); }
+    else { history.replaceState({}, '', location.href); royxatChiz(); }
   </script>
 </body>
 </html>

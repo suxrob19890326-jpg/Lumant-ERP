@@ -339,3 +339,17 @@ tr.yetmaydi td { background: #fdecea; }
 .hafta-chiziq i { display: block; height: 100%; background: #E8731A; }
 .xavf-ogoh { background: #fdecea; color: #c0392b; font-weight: 600; }
 @media print { .reja-jadval td { vertical-align: top; } }
+
+/* ---------- Sverka: hamma mijozlar ro'yxati ---------- */
+.hamma-royxat .guruh { margin: 10px 0; border: 1px solid #eee3da; border-radius: 12px; overflow: hidden; }
+.hamma-royxat summary { padding: 10px 12px; cursor: pointer; font-size: 14px; background: #fbefe4; color: #5A2E0E; }
+.hamma-royxat .haqdor summary { background: #e6f4ea; }
+.hamma-royxat .nol summary { background: #f6f2ee; }
+.mijoz-qator { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center; width: 100%; margin: 0;
+  padding: 10px 12px; background: white; color: #3a2410; border: 0; border-top: 1px solid #f3ebe4; border-radius: 0; text-align: left; font-size: 15px; font-weight: 400; }
+.mijoz-qator:active { background: #fbefe4; }
+.mijoz-qator .raqam-tartib { color: #b09a88; font-size: 12px; text-align: right; }
+.mijoz-qator .mijoz-nom { overflow-wrap: anywhere; font-weight: 600; }
+.mijoz-qator .mijoz-nom small { display: block; font-weight: 400; color: #8a6a50; font-size: 12px; margin-top: 2px; }
+.mijoz-qator b { white-space: nowrap; font-size: 15px; }
+#royxatga { margin: 0 0 10px; }
