@@ -269,6 +269,12 @@
     // ---------- Grafik va qarz muddati: barcha yozuvlar bir marta yuklanadi ----------
     const OY = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
     const qisqa = (n) => n >= 1e9 ? (n / 1e9).toFixed(1).replace('.0', '') + ' mlrd' : n >= 1e6 ? Math.round(n / 1e6) + ' mln' : n >= 1e3 ? Math.round(n / 1e3) + ' ming' : String(Math.round(n));
+    // Sahifa ochilishi sekinlashmasin: grafikka yetib kelganda (yoki 3 soniyadan keyin) yuklanadi
+    await new Promise(tayyor => {
+      const kuzat = new IntersectionObserver((e) => { if (e.some(x => x.isIntersecting)) { kuzat.disconnect(); tayyor(); } }, { rootMargin: '300px' });
+      kuzat.observe($('grafik'));
+      setTimeout(() => { kuzat.disconnect(); tayyor(); }, 3000);
+    });
     const hamma = await hammasi(() => db.from('yozuvlar').select('id, mijoz_id, sana, turi, summa').order('id'));
     if (hamma.error) { $('grafik').innerHTML = `<p class="xato">Xato: ${toza(hamma.error.message)}</p>`; throw hamma.error; }
     const yozuvlar = hamma.data.filter(y => !usdmi(y.mijoz_id));   // so'm hisoblar

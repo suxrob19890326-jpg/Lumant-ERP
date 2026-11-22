@@ -54,6 +54,7 @@ grant select, insert, update on kassa_yopish to authenticated;
 create or replace function kassa_yopish_xabar() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
+  if tg_op = 'UPDATE' and new.farq is not distinct from old.farq then return null; end if;   -- farq o'zgarmagan
   if abs(new.farq) >= 1 then
     perform telegram_xabar('⚠️ Kassa farqi — ' || to_char(new.sana, 'DD.MM.YYYY') || E'\n' ||
       initcap(new.kassa) || ': hisobda ' || pul_matn(new.hisobda) || ', sanaldi ' || pul_matn(new.sanaldi) ||

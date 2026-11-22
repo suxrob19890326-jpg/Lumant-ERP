@@ -10,9 +10,9 @@ export function navbat() {
 }
 function saqla(r) { try { localStorage[KALIT] = JSON.stringify(r); } catch {} }
 
-export function navbatgaQosh(yozuv, nomi) {
+export function navbatgaQosh(yozuv, nomi, buyurtma = null) {
   const r = navbat();
-  r.push({ yozuv, nomi, vaqt: new Date().toISOString() });
+  r.push({ yozuv, nomi, buyurtma, vaqt: new Date().toISOString() });
   saqla(r);
   return r.length;
 }
@@ -33,8 +33,13 @@ export async function navbatYubor(db) {
         ({ error } = await db.from('yozuvlar').insert(y));
       }
       if (error && tarmoqXatosi(error)) break;   // internet yana uzildi — keyinroq
-      if (!error || error.code === '23505') yuborildi++;   // 23505 — avval yetib borgan (client_id takrori)
-      else xatolar.push(`${n.nomi}: ${error.message}`);
+      if (!error || error.code === '23505') {   // 23505 — avval yetib borgan (client_id takrori)
+        yuborildi++;
+        if (n.buyurtma && y.client_id) {        // buyurtmadan kiritilgan bo'lsa — buyurtma bajarildi
+          const { data: yz } = await db.from('yozuvlar').select('id').eq('client_id', y.client_id).maybeSingle();
+          if (yz) await db.from('buyurtmalar').update({ holat: 'bajarildi', yozuv_id: yz.id }).eq('id', n.buyurtma).eq('holat', 'yangi');
+        }
+      } else xatolar.push(`${n.nomi}: ${error.message}`);
       saqla(navbat().filter(x => x.vaqt !== n.vaqt || x.nomi !== n.nomi));   // yuborilgan (yoki rad etilgan) olib tashlanadi
     }
   } finally { ishlayapti = false; }

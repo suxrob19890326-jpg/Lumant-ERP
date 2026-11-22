@@ -294,7 +294,8 @@
       tugma.disabled = false;
       tugma.textContent = 'Saqlash';
       if (error && tarmoqXatosi(error)) {
-        const n = navbatgaQosh(yozuv, mijoz.nomi);
+        const n = navbatgaQosh(yozuv, mijoz.nomi, buyurtma?.id || null);
+        buyurtma = null;
         $('yangiQoldiq').textContent = '📴 Telefonda saqlandi';
         $('yangiIzoh').textContent = `Internet yo'q. Navbatda ${n} ta yozuv — internet qaytganda o'zi yuboriladi.`;
         $('nakladnoy').hidden = true;
