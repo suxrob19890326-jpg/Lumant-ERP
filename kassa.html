@@ -59,6 +59,9 @@
       <input id="toifa" list="toifalar" placeholder="tanlang yoki yozing">
     </label>
     <datalist id="toifalar"></datalist>
+    <label id="ishchiQism" hidden>Kimga (ishchi) <select id="ishchi"><option value="">— tanlang —</option></select></label>
+    <label id="avtoQism" hidden>Qaysi mashina <input id="avto" list="avtolar" placeholder="01 A 123 BC"></label>
+    <datalist id="avtolar"></datalist>
     <label>Izoh <input id="izoh" placeholder="ixtiyoriy"></label>
 
     <button type="submit" id="saqla">Saqlash</button>
@@ -77,6 +80,18 @@
       <span class="chiqim">−<b id="kunChiqim">0</b></span>
     </p>
     <div id="qatorlar"></div>
+  </section>
+
+  <!-- 4) Kunni yopish: kassadagi pulni sanab, tizim bilan solishtirish -->
+  <section class="panel" id="yopishQism" hidden>
+    <h2 class="kichik-sarlavha">🔒 Kunni yopish (bugun)</h2>
+    <p class="tushuntir">Kassadagi pulni sanab yozing. Farq bo'lsa, rahbarga Telegram orqali xabar boradi.</p>
+    <div id="yopishMaydon"></div>
+    <label>Izoh <input id="yIzoh" placeholder="farq sababi (bo'lsa)"></label>
+    <button type="button" id="ySaqla">Kunni yopish</button>
+    <p id="yXabar" class="xato"></p>
+    <button type="button" class="tugma-oddiy" id="yFarq" hidden>Farqni kassaga yozish (hisobni to'g'rilash)</button>
+    <div id="yTarix"></div>
   </section>
 
   <script type="module">
@@ -139,6 +154,14 @@
       $('toifaQism').hidden = otk;
       $('toifalar').innerHTML = (TOIFA[y] || []).map(t => `<option value="${toza(t)}">`).join('');
       $('toifa').value = '';
+      toifaTekshir();
+    }
+    // Oylik/avans — ishchiga; yoqilg'i/ta'mir — mashinaga bog'lanadi (11-SQL bo'lsa)
+    const ISHCHI_TOIFA = /oylik|avans/i, AVTO_TOIFA = /yoqilg|ta'mir|ehtiyot|transport/i;
+    function toifaTekshir() {
+      const t = $('toifa').value, chiq = yonalish === 'chiqim';
+      $('ishchiQism').hidden = !(v11 && chiq && ISHCHI_TOIFA.test(t));
+      $('avtoQism').hidden = !(v11 && chiq && AVTO_TOIFA.test(t));
     }
     $('yonalishlar').addEventListener('click', (e) => {
       const b = e.target.closest('button[data-y]');
@@ -242,6 +265,8 @@
         const toifa = $('toifa').value.trim();
         if (!toifa) { xato.textContent = 'Toifani tanlang yoki yozing'; $('toifa').focus(); return; }
         qatorlar = [{ sana, kassa: tanlov.kassa, yonalish, summa, toifa, izoh }];
+        if (!$('ishchiQism').hidden && $('ishchi').value) qatorlar[0].ishchi_id = Number($('ishchi').value);
+        if (!$('avtoQism').hidden && $('avto').value.trim()) qatorlar[0].avto_raqami = $('avto').value.trim();
       }
 
       const tugma = $('saqla');
@@ -252,7 +277,8 @@
       tugma.textContent = 'Saqlash';
       if (error) { xato.textContent = 'Saqlanmadi: ' + error.message; return; }
 
-      ['summa', 'toifa', 'izoh'].forEach(id => $(id).value = '');
+      ['summa', 'toifa', 'izoh', 'avto'].forEach(id => $(id).value = '');
+      $('ishchi').value = ''; toifaTekshir();
       xato.textContent = '';
       $('saqla').textContent = '✅ Saqlandi';
       setTimeout(() => { if (!tugma.disabled) tugma.textContent = 'Saqlash'; }, 1500);
@@ -260,11 +286,70 @@
       kunTanla(sana);
     });
 
+    // ---------- 11-SQL: ishchilar, mashinalar, kunni yopish ----------
+    let v11 = false, oxirgiQoldiq = [];
+    const ish = await db.from('ishchilar').select('id, ism, faol').order('ism');
+    if (!ish.error) {
+      v11 = true;
+      $('ishchi').innerHTML += ish.data.filter(x => x.faol).map(x => `<option value="${x.id}">${toza(x.ism)}</option>`).join('');
+      const av = await db.from('yozuvlar').select('avto_raqami').eq('turi', 'yuk_berildi').not('avto_raqami', 'is', null)
+        .order('id', { ascending: false }).limit(500);
+      const avtolar = [...new Set((av.data || []).map(x => x.avto_raqami.trim().toUpperCase()))];
+      $('avtolar').innerHTML = avtolar.map(a => `<option value="${toza(a)}">`).join('');
+      $('yopishQism').hidden = false;
+    }
+    $('toifa').addEventListener('input', toifaTekshir);
+
+    async function yopishChiz() {
+      if (!v11) return;
+      const { data } = await db.from('kassa_qoldiq').select('kassa, qoldiq');
+      oxirgiQoldiq = data || [];
+      $('yopishMaydon').innerHTML = '<div class="ikki">' + oxirgiQoldiq.filter(r => KASSA[r.kassa]).map(r => `
+        <label>${KASSA[r.kassa]} <small class="soni">hisobda ${pul(r.qoldiq)}</small>
+          <input data-yop="${r.kassa}" inputmode="decimal" placeholder="sanaldi"></label>`).join('') + '</div>';
+      const t = await db.from('kassa_yopish').select('sana, kassa, hisobda, sanaldi, farq, izoh').order('sana', { ascending: false }).order('kassa').limit(20);
+      $('yTarix').innerHTML = (t.data || []).length ? '<h2 class="kichik-sarlavha">Oxirgi yopilishlar</h2>' + t.data.map(x => `
+        <div class="yozuv"><div class="yuqori"><span class="sana">${x.sana.split('-').reverse().join('.')}</span>
+          <span class="nomi">${KASSA[x.kassa] || toza(x.kassa)}</span>
+          <span class="summa ${Math.abs(x.farq) >= 1 ? 'manfiy' : 'kirim'}">${Math.abs(x.farq) >= 1 ? 'farq ' + pul(x.farq) : '✓ to\'g\'ri'}</span></div>
+          ${x.izoh ? `<div class="pastki"><span>${toza(x.izoh)}</span></div>` : ''}</div>`).join('') : '';
+    }
+    let farqlar = [];
+    $('ySaqla').addEventListener('click', async () => {
+      const qatorlar = [...document.querySelectorAll('[data-yop]')].filter(i => i.value.trim() !== '').map(i => ({
+        sana: bugun(), kassa: i.dataset.yop, hisobda: Number(oxirgiQoldiq.find(r => r.kassa === i.dataset.yop)?.qoldiq || 0),
+        sanaldi: son(i.value), izoh: $('yIzoh').value.trim() || null,
+      }));
+      if (!qatorlar.length) { $('yXabar').textContent = 'Kamida bitta kassani sanab yozing'; return; }
+      if (qatorlar.some(q => Number.isNaN(q.sanaldi) || q.sanaldi === null)) { $('yXabar').textContent = 'Summani to\'g\'ri yozing'; return; }
+      const { error } = await db.from('kassa_yopish').upsert(qatorlar, { onConflict: 'sana,kassa' });
+      if (error) { $('yXabar').textContent = 'Saqlanmadi: ' + error.message; $('yXabar').classList.remove('ok'); return; }
+      farqlar = qatorlar.filter(q => Math.abs(q.sanaldi - q.hisobda) >= 1);
+      $('yXabar').classList.toggle('ok', !farqlar.length);
+      $('yXabar').textContent = farqlar.length
+        ? '⚠️ Farq bor: ' + farqlar.map(q => `${KASSA[q.kassa]} ${pul(q.sanaldi - q.hisobda)}`).join(', ') + '. Rahbarga xabar yuborildi.'
+        : '✅ Kun yopildi — hammasi to\'g\'ri';
+      $('yFarq').hidden = !farqlar.length;
+      yopishChiz();
+    });
+    $('yFarq').addEventListener('click', async () => {
+      if (!confirm('Kassa qoldig\'i sanalgan summaga tenglashtirilsinmi?')) return;
+      const { error } = await db.from('kassa_yozuvlar').insert(farqlar.map(q => ({
+        sana: bugun(), kassa: q.kassa, yonalish: q.sanaldi > q.hisobda ? 'kirim' : 'chiqim',
+        summa: Math.abs(q.sanaldi - q.hisobda), toifa: 'Kassa farqi', izoh: q.izoh,
+      })));
+      if (error) { $('yXabar').textContent = 'Yozilmadi: ' + error.message; return; }
+      $('yFarq').hidden = true;
+      $('yXabar').textContent = '✅ Kassa sanalgan summaga tenglashtirildi';
+      $('yXabar').classList.add('ok');
+      await qoldiqlar(); kunTanla(bugun()); yopishChiz();
+    });
+
     // ---------- Boshlang'ich holat ----------
     yonalishTanla('chiqim');
     kassaTugmalar();
     $('sana').value = bugun();
-    if (await qoldiqlar()) kunTanla(bugun());
+    if (await qoldiqlar()) { kunTanla(bugun()); yopishChiz(); }
   </script>
 </body>
 </html>

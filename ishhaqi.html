@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<!-- Ish haqi: ishchilar, oylik tabel (kalendar), hisoblangan − to'langan = qoldiq, kassadan to'lash -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ish haqi · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Ish haqi va tabel</h1>
+  </header>
+
+  <section class="panel">
+    <div class="kun">
+      <button type="button" id="oldingi" aria-label="Oldingi oy">‹</button>
+      <input id="oy" type="month">
+      <button type="button" id="keyingi" aria-label="Keyingi oy">›</button>
+    </div>
+    <p id="holat" class="soni">Yuklanmoqda...</p>
+    <button type="button" class="tugma-oddiy" id="bugunHamma" hidden>✅ Bugun hamma ishda (tabel)</button>
+    <div class="jadval-oyna">
+      <table>
+        <thead><tr><th>Ishchi</th><th class="raqam">Kun</th><th class="raqam">Hisoblandi</th><th class="raqam">To'landi</th><th class="raqam">Qoldiq</th></tr></thead>
+        <tbody id="jadval"></tbody>
+      </table>
+    </div>
+    <p class="tushuntir">Ishchini bosing — tabeli va to'lovlari ochiladi. Oylik stavkada: maosh × ishlagan kun / oydagi ish kunlari (dushanba–shanba).</p>
+  </section>
+
+  <section class="panel" id="ishchiOyna" hidden>
+    <h2 class="kichik-sarlavha" id="iNomi"></h2>
+    <p id="iIzoh" class="soni"></p>
+    <div class="kalendar-bosh"><span>Du</span><span>Se</span><span>Ch</span><span>Pa</span><span>Ju</span><span>Sh</span><span>Ya</span></div>
+    <div id="kalendar" class="kalendar"></div>
+    <p class="tushuntir" id="kIzoh">Kunni bosing: ✓ ishladi → ½ yarim kun → ✗ kelmadi → bo'sh.</p>
+
+    <div id="tolovQism">
+      <h3 class="kichik-sarlavha">💵 To'lash (kassadan)</h3>
+      <div class="ikki">
+        <label>Summa <input id="tSumma" inputmode="decimal"></label>
+        <label>Turi <select id="tToifa"><option>Oylik</option><option>Avans (xodim)</option></select></label>
+      </div>
+      <div class="turlar uch" id="tKassa">
+        <button type="button" data-k="naqd" class="tanlangan">💵 Naqd</button>
+        <button type="button" data-k="karta">💳 Karta</button>
+        <button type="button" data-k="bank">🏦 Bank</button>
+      </div>
+      <button type="button" id="tolash">To'lash</button>
+      <p id="tXabar" class="xato"></p>
+    </div>
+    <div id="tolovlar"></div>
+
+    <details id="tahrirQism">
+      <summary>✏️ Ishchi ma'lumotlarini o'zgartirish</summary>
+      <div id="tahrirForma"></div>
+    </details>
+  </section>
+
+  <form class="panel" id="yangi" autocomplete="off" hidden>
+    <h2 class="kichik-sarlavha">➕ Yangi ishchi</h2>
+    <div id="yangiForma"></div>
+    <button type="submit">Qo'shish</button>
+    <p id="yXabar" class="xato"></p>
+  </form>
+
+  <script type="module">
+    import { db, loginShart, pul, sana, toza, hammasi, bugun, jadvalYoq } from './db.js';
+
+    const user = await loginShart('ishhaqi');
+    const $ = (id) => document.getElementById(id);
+    const boshqaradi = ['admin', 'rahbar'].includes(user.rol);
+    const son = (s) => { const t = String(s ?? '').replace(/\s/g, '').replace(',', '.'); return t ? Number(t) : null; };
+    const BELGI = { ish: '✓', yarim: '½', yoq: '✗' };
+    const KEYINGI = { '': 'ish', ish: 'yarim', yarim: 'yoq', yoq: '' };
+    const QIYMAT = { ish: 1, yarim: 0.5, yoq: 0 };
+
+    const forma = (p, x = {}) => `
+      <label>Ism familiya * <input id="${p}Ism" value="${toza(x.ism || '')}" required></label>
+      <div class="ikki">
+        <label>Lavozim <input id="${p}Lavozim" value="${toza(x.lavozim || '')}" placeholder="operator, haydovchi..."></label>
+        <label>Telefon <input id="${p}Telefon" value="${toza(x.telefon || '')}" inputmode="tel"></label>
+        <label>Stavka turi <select id="${p}Turi"><option value="oylik" ${x.stavka_turi !== 'kunlik' ? 'selected' : ''}>Oylik maosh</option>
+          <option value="kunlik" ${x.stavka_turi === 'kunlik' ? 'selected' : ''}>Kunlik haq</option></select></label>
+        <label>Stavka (so'm) <input id="${p}Stavka" value="${x.stavka ? pul(x.stavka) : ''}" inputmode="decimal"></label>
+      </div>
+      ${p === 't' ? `<label class="belgi"><input type="checkbox" id="tFaol" ${x.faol !== false ? 'checked' : ''}> Ishlayapti (faol)</label>
+        <button type="button" id="tSaqla">Saqlash</button><p id="tTXabar" class="xato"></p>` : ''}`;
+    const formaQiymat = (p) => ({
+      ism: $(p + 'Ism').value.trim(), lavozim: $(p + 'Lavozim').value.trim() || null, telefon: $(p + 'Telefon').value.trim() || null,
+      stavka_turi: $(p + 'Turi').value, stavka: son($(p + 'Stavka').value) || 0,
+    });
+
+    let ishchilar = [], tabel = [], tolovlar = [], tanlangan = null;
+    const oyBoshi = () => $('oy').value + '-01';
+    const oyOxiri = () => { const [y, m] = $('oy').value.split('-').map(Number); return new Date(y, m, 0).toLocaleDateString('sv-SE'); };
+    const ishKunlari = () => { const [y, m] = $('oy').value.split('-').map(Number); let n = 0;
+      for (let d = 1; d <= new Date(y, m, 0).getDate(); d++) if (new Date(y, m - 1, d).getDay() !== 0) n++; return n; };
+
+    async function yukla() {
+      const [i, t, k] = await Promise.all([
+        db.from('ishchilar').select('*').order('ism'),
+        hammasi(() => db.from('tabel').select('ishchi_id, sana, holat').gte('sana', oyBoshi()).lte('sana', oyOxiri()).order('sana')),
+        hammasi(() => db.from('kassa_yozuvlar').select('id, sana, kassa, summa, toifa, ishchi_id').not('ishchi_id', 'is', null)
+          .gte('sana', oyBoshi()).lte('sana', oyOxiri()).order('id')),
+      ]);
+      if (i.error) {
+        $('holat').textContent = jadvalYoq(i.error) ? 'Ish haqi bo\'limi hali yoqilmagan: supabase/11_qoshimcha.sql ni ishga tushiring.' : 'Xato: ' + i.error.message;
+        return;
+      }
+      ishchilar = i.data; tabel = t.data || []; tolovlar = k.data || [];
+      chiz();
+      if (tanlangan) och(ishchilar.find(x => x.id === tanlangan.id));
+    }
+    function hisob(x) {
+      const kun = tabel.filter(t => t.ishchi_id === x.id).reduce((s, t) => s + QIYMAT[t.holat], 0);
+      const hisob = x.stavka_turi === 'kunlik' ? kun * Number(x.stavka) : Number(x.stavka) * Math.min(1, kun / ishKunlari());
+      const tolandi = tolovlar.filter(k => k.ishchi_id === x.id).reduce((s, k) => s + Number(k.summa), 0);
+      return { kun, hisob: Math.round(hisob), tolandi, qoldiq: Math.round(hisob) - tolandi };
+    }
+    function chiz() {
+      const korin = ishchilar.filter(x => x.faol || tabel.some(t => t.ishchi_id === x.id) || tolovlar.some(k => k.ishchi_id === x.id));
+      const j = korin.map(hisob).reduce((a, h) => ({ hisob: a.hisob + h.hisob, tolandi: a.tolandi + h.tolandi }), { hisob: 0, tolandi: 0 });
+      $('holat').textContent = korin.length ? `${korin.length} ta ishchi · ish kunlari: ${ishKunlari()}` : 'Ishchi yo\'q. Pastdan qo\'shing.';
+      $('jadval').innerHTML = korin.map(x => { const h = hisob(x);
+        return `<tr class="bosiladi ${x.faol ? '' : 'xira'}" data-id="${x.id}"><td><b>${toza(x.ism)}</b><br><small class="soni">${toza(x.lavozim || '')}</small></td>
+          <td class="raqam">${h.kun}</td><td class="raqam">${pul(h.hisob)}</td><td class="raqam">${pul(h.tolandi)}</td>
+          <td class="raqam ${h.qoldiq > 0 ? 'manfiy' : ''}"><b>${pul(h.qoldiq)}</b></td></tr>`; }).join('') +
+        (korin.length > 1 ? `<tr class="jami-qator"><td>Jami</td><td></td><td class="raqam">${pul(j.hisob)}</td><td class="raqam">${pul(j.tolandi)}</td><td class="raqam">${pul(j.hisob - j.tolandi)}</td></tr>` : '');
+    }
+    $('jadval').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-id]');
+      if (tr) { och(ishchilar.find(x => x.id == tr.dataset.id)); $('ishchiOyna').scrollIntoView({ behavior: 'smooth' }); }
+    });
+
+    function och(x) {
+      tanlangan = x;
+      if (!x) { $('ishchiOyna').hidden = true; return; }
+      const h = hisob(x);
+      $('ishchiOyna').hidden = false;
+      $('iNomi').textContent = x.ism + (x.lavozim ? ' · ' + x.lavozim : '');
+      $('iIzoh').textContent = `${x.stavka_turi === 'kunlik' ? 'Kunlik' : 'Oylik'}: ${pul(x.stavka)} · ishladi ${h.kun} kun · hisoblandi ${pul(h.hisob)} · to'landi ${pul(h.tolandi)} · qoldiq ${pul(h.qoldiq)}`;
+      // Kalendar (dushanbadan)
+      const [y, m] = $('oy').value.split('-').map(Number);
+      const kunlar = new Date(y, m, 0).getDate(), bosh = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+      const holat = new Map(tabel.filter(t => t.ishchi_id === x.id).map(t => [t.sana, t.holat]));
+      let html = '<span></span>'.repeat(bosh);
+      for (let d = 1; d <= kunlar; d++) {
+        const s = `${$('oy').value}-${String(d).padStart(2, '0')}`, h = holat.get(s) || '';
+        html += `<button type="button" class="kun-katak ${h} ${s === bugun() ? 'bugun' : ''}" data-sana="${s}" ${boshqaradi ? '' : 'disabled'}>
+          <small>${d}</small><b>${BELGI[h] || ''}</b></button>`;
+      }
+      $('kalendar').innerHTML = html;
+      $('kIzoh').hidden = !boshqaradi;
+      $('tSumma').value = h.qoldiq > 0 ? pul(h.qoldiq) : '';
+      $('tXabar').textContent = '';
+      $('tolovlar').innerHTML = tolovlar.filter(k => k.ishchi_id === x.id).map(k => `<div class="yozuv chiqim"><div class="yuqori">
+        <span class="sana">${sana(k.sana)}</span><span class="nomi">${toza(k.toifa || '')}</span><span class="summa">−${pul(k.summa)}</span></div></div>`).join('');
+      $('tahrirQism').hidden = !boshqaradi;
+      if (boshqaradi) {
+        $('tahrirForma').innerHTML = forma('t', x);
+        $('tSaqla').addEventListener('click', async () => {
+          const o = { ...formaQiymat('t'), faol: $('tFaol').checked };
+          if (!o.ism) { $('tTXabar').textContent = 'Ismni yozing'; return; }
+          const { error } = await db.from('ishchilar').update(o).eq('id', x.id);
+          $('tTXabar').textContent = error ? 'Saqlanmadi: ' + error.message : '✅ Saqlandi';
+          $('tTXabar').classList.toggle('ok', !error);
+          if (!error) { Object.assign(x, o); chiz(); }
+        });
+      }
+    }
+
+    // Tabel: kunni bosish
+    $('kalendar').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-sana]');
+      if (!b || !boshqaradi || !tanlangan) return;
+      const s = b.dataset.sana, eski = tabel.find(t => t.ishchi_id === tanlangan.id && t.sana === s);
+      const yangi = KEYINGI[eski?.holat || ''];
+      b.disabled = true;
+      const { error } = yangi
+        ? await db.from('tabel').upsert({ ishchi_id: tanlangan.id, sana: s, holat: yangi }, { onConflict: 'ishchi_id,sana' })
+        : await db.from('tabel').delete().eq('ishchi_id', tanlangan.id).eq('sana', s);
+      b.disabled = false;
+      if (error) { alert('Saqlanmadi: ' + error.message); return; }
+      tabel = tabel.filter(t => t !== eski);
+      if (yangi) tabel.push({ ishchi_id: tanlangan.id, sana: s, holat: yangi });
+      chiz(); och(tanlangan);
+    });
+
+    $('bugunHamma').addEventListener('click', async () => {
+      if (bugun().slice(0, 7) !== $('oy').value) { $('oy').value = bugun().slice(0, 7); }
+      const faol = ishchilar.filter(x => x.faol);
+      if (!faol.length || !confirm(`Bugun ${faol.length} ta ishchi "ishladi" deb belgilansinmi? (Kelmaganlarni keyin o'zgartirasiz)`)) return;
+      const { error } = await db.from('tabel').upsert(faol.map(x => ({ ishchi_id: x.id, sana: bugun(), holat: 'ish' })), { onConflict: 'ishchi_id,sana' });
+      if (error) { alert('Saqlanmadi: ' + error.message); return; }
+      yukla();
+    });
+
+    // To'lash
+    let tKassa = 'naqd';
+    $('tKassa').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-k]'); if (!b) return;
+      tKassa = b.dataset.k;
+      $('tKassa').querySelectorAll('button').forEach(x => x.classList.toggle('tanlangan', x === b));
+    });
+    $('tolash').addEventListener('click', async () => {
+      const summa = son($('tSumma').value);
+      if (!(summa > 0)) { $('tXabar').textContent = 'Summani yozing'; return; }
+      if (!confirm(`${tanlangan.ism}ga ${pul(summa)} so'm to'lansinmi?`)) return;
+      const { error } = await db.from('kassa_yozuvlar').insert({ sana: bugun(), kassa: tKassa, yonalish: 'chiqim', summa,
+        toifa: $('tToifa').value, izoh: tanlangan.ism, ishchi_id: tanlangan.id });
+      $('tXabar').textContent = error ? 'To\'lanmadi: ' + error.message : '✅ To\'landi (kassadan chiqim yozildi)';
+      $('tXabar').classList.toggle('ok', !error);
+      if (!error) { if (bugun().slice(0, 7) === $('oy').value) await yukla(); }
+    });
+
+    // Yangi ishchi
+    if (boshqaradi) {
+      $('yangi').hidden = false;
+      $('bugunHamma').hidden = false;
+      $('yangiForma').innerHTML = forma('y');
+      $('yangi').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const o = formaQiymat('y');
+        if (!o.ism) { $('yXabar').textContent = 'Ismni yozing'; return; }
+        const { error } = await db.from('ishchilar').insert(o);
+        $('yXabar').textContent = error ? (jadvalYoq(error) ? 'Avval supabase/11_qoshimcha.sql ni ishga tushiring.' : 'Qo\'shilmadi: ' + error.message) : '✅ Qo\'shildi';
+        $('yXabar').classList.toggle('ok', !error);
+        if (!error) { $('yangiForma').innerHTML = forma('y'); yukla(); }
+      });
+    }
+
+    const oyQosh = (n) => { const [y, m] = $('oy').value.split('-').map(Number); const d = new Date(y, m - 1 + n, 1);
+      $('oy').value = d.toLocaleDateString('sv-SE').slice(0, 7); yukla(); };
+    $('oldingi').addEventListener('click', () => oyQosh(-1));
+    $('keyingi').addEventListener('click', () => oyQosh(1));
+    $('oy').addEventListener('change', yukla);
+    $('oy').value = bugun().slice(0, 7);
+    yukla();
+  </script>
+</body>
+</html>

@@ -35,6 +35,7 @@
 
   <!-- 2) MENYU: kirgandan keyin ko'rinadi -->
   <main id="menyu" hidden>
+    <p id="navbatXabar" class="panel ogoh" hidden></p>
     <a id="zaxiraEslat" class="panel ogoh zaxira-eslat" href="sozlamalar.html" hidden></a>
     <p id="rolsiz" class="panel rolsiz" hidden>Sizga hali rol berilmagan. Admin'ga murojaat qiling —
       u "Xodimlar" bo'limida sizga rol beradi.</p>
@@ -45,7 +46,9 @@
     <a class="card" data-s="ombor" href="ombor.html">📦 Ombor</a>
     <a class="card" data-s="ishlab" href="ishlab.html">🏭 Ishlab chiqarish</a>
     <a class="card" data-s="hisobot" href="hisobot.html">📊 Hisobot</a>
+    <a class="card" data-s="foyda" href="foyda.html">💰 Tannarx va foyda</a>
     <a class="card" data-s="reyslar" href="reyslar.html">🚛 Miksjer reyslari</a>
+    <a class="card" data-s="ishhaqi" href="ishhaqi.html">👷 Ish haqi va tabel</a>
     <a class="card" data-s="spravochnik" href="spravochnik.html">📚 Spravochniklar</a>
     <a class="card" data-s="xodimlar" href="xodimlar.html">👤 Xodimlar va rollar</a>
     <a class="card" data-s="tarix" href="tarix.html">🕓 O'zgarishlar tarixi</a>
@@ -56,7 +59,19 @@
   <footer>Kogon tumani · Lumant Beton</footer>
 
   <script type="module">
-    import { db, rolim, ruxsat, ROL_NOMI } from './db.js';
+    import { db, rolim, ruxsat, ROL_NOMI, navbat } from './db.js';
+
+    // Internetsiz kiritilgan yozuvlar
+    function navbatKorsat(natija) {
+      const el = document.getElementById('navbatXabar'), n = navbat().length;
+      let m = n ? `📴 ${n} ta yozuv telefonda navbatda — internet qaytganda o'zi yuboriladi` : '';
+      if (natija?.yuborildi) m = `✅ Internetsiz kiritilgan ${natija.yuborildi} ta yozuv yuborildi` + (n ? ` · yana ${n} ta navbatda` : '');
+      if (natija?.xatolar?.length) m += ` · ⚠️ ${natija.xatolar.length} tasi rad etildi: ${natija.xatolar.join('; ')}`;
+      el.textContent = m;
+      el.hidden = !m;
+    }
+    window.addEventListener('navbat', (e) => navbatKorsat(e.detail));
+    navbatKorsat();
 
     const login = document.getElementById('login');
     const menyu = document.getElementById('menyu');

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<!-- Mijoz kabineti: login'siz, maxsus havola (?k=...) orqali. Mijoz o'z hisobini ko'radi va buyurtma beradi. -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Mening hisobim</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="config.js">
+</head>
+<body>
+  <header class="kichik">
+    <h1 id="korxona">Mening hisobim</h1>
+  </header>
+
+  <section class="panel">
+    <p id="holat" class="soni">Yuklanmoqda...</p>
+    <div id="asosiy" hidden>
+      <div class="qoldiq">
+        <span id="nomi"></span>
+        <b id="qoldiq"></b>
+        <small id="qIzoh"></small>
+      </div>
+      <p id="aloqa" class="tushuntir"></p>
+    </div>
+  </section>
+
+  <form class="panel" id="forma" autocomplete="off" hidden>
+    <h2 class="kichik-sarlavha">📋 Buyurtma berish</h2>
+    <div class="ikki">
+      <label>Qaysi kuni <input id="fSana" type="date" required></label>
+      <label>Vaqti <input id="fVaqt" placeholder="09:00"></label>
+    </div>
+    <label>Mahsulot <select id="fMahsulot" required></select></label>
+    <label>Miqdor <span id="fOlchov" class="soni"></span><input id="fMiqdor" inputmode="decimal" placeholder="0" required></label>
+    <label>Manzil <input id="fManzil" placeholder="Qayerga olib borish kerak"></label>
+    <label>Telefon <input id="fTelefon" inputmode="tel"></label>
+    <label>Izoh <input id="fIzoh" placeholder="ixtiyoriy"></label>
+    <button type="submit" id="yubor">Buyurtma berish</button>
+    <p id="xato" class="xato"></p>
+  </form>
+
+  <section class="panel" id="buyQism" hidden>
+    <h2 class="kichik-sarlavha">Buyurtmalarim</h2>
+    <div id="buyurtmalar"></div>
+  </section>
+
+  <section class="panel" id="yozQism" hidden>
+    <h2 class="kichik-sarlavha">Hisob-kitob tarixi</h2>
+    <div id="yozuvlar"></div>
+    <button type="button" class="tugma-oddiy" id="koproq" hidden>Yana ko'rsatish</button>
+  </section>
+
+  <script type="module">
+    import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+    // Login'siz: faqat kabinet() va kabinet_buyurtma() funksiyalari ochiq
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+    const $ = (id) => document.getElementById(id);
+    const toza = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const pul = (n) => { let x = Number(n || 0); if (Math.abs(x) < 0.005) x = 0; return x.toLocaleString('ru-RU', { maximumFractionDigits: 2 }); };
+    const sana = (s) => s ? s.split('-').reverse().join('.') : '';
+    const bugun = () => new Date().toLocaleDateString('sv-SE');
+    const TUR = { yuk_berildi: '🚚 Yuk olindi', tolov_keldi: '💵 To\'lov', mahsulot_olindi: '⬇️ Bizga sotildi', pul_berildi: '💸 Sizga to\'landi', tuzatish: '✏️ Tuzatish' };
+    const HOLAT = { yangi: '⏳ Kutilmoqda', bajarildi: '✅ Yetkazildi', bekor: '✖ Bekor qilindi' };
+
+    const kalit = new URLSearchParams(location.search).get('k') || '';
+    let k = null, korsat = 30;
+    async function yukla() {
+      if (!/^[0-9a-f-]{36}$/i.test(kalit)) { $('holat').textContent = 'Havola noto\'g\'ri. Korxonadan yangisini so\'rang.'; return; }
+      const { data, error } = await db.rpc('kabinet', { p_kalit: kalit });
+      if (error) { $('holat').textContent = 'Xato: ' + error.message; return; }
+      if (!data) { $('holat').textContent = 'Havola eskirgan yoki o\'chirilgan. Korxonadan yangisini so\'rang.'; return; }
+      k = data;
+      const b = k.valyuta === 'USD' ? '$' : 'so\'m';
+      document.title = `${k.nomi} · ${k.korxona?.nomi || ''}`;
+      $('korxona').textContent = k.korxona?.nomi || 'Mening hisobim';
+      $('holat').hidden = true;
+      $('asosiy').hidden = false;
+      $('nomi').textContent = k.nomi;
+      const q = Number(k.qoldiq);
+      $('qoldiq').textContent = pul(Math.abs(q)) + ' ' + b;
+      $('qoldiq').classList.toggle('manfiy', q > 0);
+      $('qIzoh').textContent = q > 0 ? 'Sizning qarzingiz' : q < 0 ? 'Sizning avansingiz (oldindan to\'lov)' : 'Hisob yopiq';
+      $('aloqa').innerHTML = [k.korxona?.telefon && `📞 <a href="tel:${toza(k.korxona.telefon.replace(/[^\d+]/g, ''))}">${toza(k.korxona.telefon)}</a>`,
+        k.korxona?.manzil && '📍 ' + toza(k.korxona.manzil)].filter(Boolean).join(' · ');
+
+      // Buyurtma formasi
+      $('forma').hidden = !k.mahsulotlar.length;
+      $('fMahsulot').innerHTML = '<option value="">— tanlang —</option>' +
+        k.mahsulotlar.map(p => `<option value="${p.id}">${toza(p.nomi)}</option>`).join('');
+      $('buyQism').hidden = !k.buyurtmalar.length;
+      $('buyurtmalar').innerHTML = k.buyurtmalar.map(x => `<div class="yozuv buyurtma ${x.holat}">
+        <div class="yuqori"><span class="sana">${sana(x.sana)} ${toza(x.vaqt || '')}</span><span class="nomi">${toza(x.mahsulot)}</span>
+        <span class="summa">${pul(x.miqdor)} ${toza(x.olchov || '')}</span></div>
+        <div class="pastki"><span></span><span class="q">${HOLAT[x.holat] || ''}</span></div></div>`).join('');
+      chiz();
+    }
+    function chiz() {
+      const b = k.valyuta === 'USD' ? '$' : 'so\'m';
+      $('yozQism').hidden = !k.yozuvlar.length;
+      $('yozuvlar').innerHTML = k.yozuvlar.slice(0, korsat).map(y => `<div class="yozuv ${Number(y.summa) < 0 ? 'minus' : ''}">
+        <div class="yuqori"><span class="sana">${sana(y.sana)}</span><span class="nomi">${TUR[y.turi] || ''} ${toza(y.mahsulot || '')}</span>
+        <span class="summa">${Number(y.summa) < 0 ? '−' : '+'}${pul(Math.abs(y.summa))}</span></div>
+        <div class="pastki"><span>${y.miqdor ? `${pul(y.miqdor)} ${toza(y.olchov || '')} × ${pul(y.narx)} ${b}` : ''}${y.avto_raqami ? ' · 🚛 ' + toza(y.avto_raqami) : ''}</span></div></div>`).join('');
+      $('koproq').hidden = k.yozuvlar.length <= korsat;
+    }
+    $('koproq').addEventListener('click', () => { korsat += 50; chiz(); });
+    $('fMahsulot').addEventListener('change', () => {
+      const p = k.mahsulotlar.find(p => p.id == $('fMahsulot').value);
+      $('fOlchov').textContent = p?.olchov ? `(${p.olchov})` : '';
+    });
+    $('forma').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const xato = $('xato'); xato.classList.remove('ok');
+      const miqdor = Number(String($('fMiqdor').value).replace(/\s/g, '').replace(',', '.'));
+      if (!$('fMahsulot').value) { xato.textContent = 'Mahsulotni tanlang'; return; }
+      if (!(miqdor > 0)) { xato.textContent = 'Miqdorni yozing'; return; }
+      $('yubor').disabled = true; xato.textContent = 'Yuborilmoqda...';
+      const { error } = await db.rpc('kabinet_buyurtma', {
+        p_kalit: kalit, p_sana: $('fSana').value, p_mahsulot: Number($('fMahsulot').value), p_miqdor: miqdor,
+        p_vaqt: $('fVaqt').value, p_manzil: $('fManzil').value, p_telefon: $('fTelefon').value, p_izoh: $('fIzoh').value,
+      });
+      $('yubor').disabled = false;
+      if (error) { xato.textContent = error.message; return; }
+      xato.textContent = '✅ Buyurtmangiz qabul qilindi. Tez orada siz bilan bog\'lanamiz.'; xato.classList.add('ok');
+      ['fVaqt', 'fMiqdor', 'fIzoh'].forEach(id => $(id).value = '');
+      yukla();
+    });
+    const ertaga = new Date(); ertaga.setDate(ertaga.getDate() + 1);
+    $('fSana').value = ertaga.toLocaleDateString('sv-SE');
+    $('fSana').min = bugun();
+    yukla();
+  </script>
+</body>
+</html>

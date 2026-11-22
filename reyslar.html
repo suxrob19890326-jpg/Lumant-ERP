@@ -44,6 +44,14 @@
       </table>
     </div>
     <p class="tushuntir">Mashina raqamini bosing — uning reyslari ko'rinadi. Reys = avto raqami yozilgan "Yuk berildi" yozuvi.</p>
+    <div id="xarajatQism" hidden>
+      <h2 class="kichik-sarlavha">💸 Mashina bo'yicha daromad va xarajat</h2>
+      <div class="jadval-oyna"><table>
+        <thead><tr><th>Avto</th><th class="raqam">Tushum</th><th class="raqam">Xarajat</th><th class="raqam">Farq</th></tr></thead>
+        <tbody id="xarajatlar"></tbody></table></div>
+      <p class="tushuntir">Tushum — shu mashina olib borgan yuklar summasi. Xarajat — kassadan shu mashinaga yozilgan chiqimlar
+        (yoqilg'i, ta'mir...) va yuqoridagi haydovchi haqi.</p>
+    </div>
     <div id="tafsil"></div>
     <button type="button" class="tugma-oddiy" id="csv">⬇️ Excel'ga yuklash</button>
   </section>
@@ -84,15 +92,20 @@
       chiz();
     }));
 
-    let reyslar = [], guruh = [], avtosiz = 0, soralgan = 0, ochiq = null;
+    let reyslar = [], guruh = [], avtosiz = 0, soralgan = 0, ochiq = null, xarajatlar = null;
     async function yukla() {
       const men = ++soralgan;
       $('holat').textContent = 'Yuklanmoqda...';
       const { data, error } = await hammasi(() => db.from('yozuvlar')
-        .select('id, sana, miqdor, olchov, avto_raqami, mijozlar(nomi), mahsulotlar(nomi, olchov)')
+        .select('id, sana, miqdor, olchov, summa, avto_raqami, mijozlar(nomi), mahsulotlar(nomi, olchov)')
         .eq('turi', 'yuk_berildi').gte('sana', $('dan').value).lte('sana', $('gacha').value).order('sana').order('id'));
       if (men !== soralgan) return;
       if (error) { $('holat').textContent = 'Xato: ' + error.message; return; }
+      // Mashinaga yozilgan kassa xarajatlari (11-SQL; bo'lmasa — yo'q)
+      const kx = await hammasi(() => db.from('kassa_yozuvlar').select('id, sana, summa, toifa, avto_raqami, kassa')
+        .eq('yonalish', 'chiqim').not('avto_raqami', 'is', null).gte('sana', $('dan').value).lte('sana', $('gacha').value).order('id'));
+      if (men !== soralgan) return;
+      xarajatlar = kx.error ? null : kx.data.filter(k => k.kassa !== 'dollar');
       avtosiz = data.filter(y => !raqam(y.avto_raqami)).length;
       reyslar = data.filter(y => raqam(y.avto_raqami));
       chiz();
@@ -106,7 +119,15 @@
         x.reys++;
         if (KUB.test(y.olchov || y.mahsulotlar?.olchov || '')) x.kub += Number(y.miqdor || 0); else x.boshqa++;
         x.royxat.push(y);
+        x.tushum = (x.tushum || 0) + Number(y.summa || 0);
         g.set(k, x);
+      }
+      for (const k of xarajatlar || []) {
+        const kk = raqam(k.avto_raqami);
+        const x = g.get(kk) || { avto: k.avto_raqami.trim(), reys: 0, kub: 0, boshqa: 0, royxat: [], tushum: 0 };
+        x.xarajat = (x.xarajat || 0) + Number(k.summa);
+        (x.xRoyxat = x.xRoyxat || []).push(k);
+        g.set(kk, x);
       }
       guruh = [...g.values()].map(x => ({ ...x, haq: x.reys * tR + x.kub * tK })).sort((a, b) => b.reys - a.reys);
       const jami = guruh.reduce((s, x) => ({ reys: s.reys + x.reys, kub: s.kub + x.kub, haq: s.haq + x.haq }), { reys: 0, kub: 0, haq: 0 });
@@ -117,6 +138,10 @@
           <td class="raqam">${x.haq ? pul(x.haq) : '—'}</td></tr>`).join('') +
         (guruh.length > 1 ? `<tr class="jami-qator"><td>Jami</td><td class="raqam">${jami.reys}</td><td class="raqam">${pul(Math.round(jami.kub * 100) / 100)}</td><td class="raqam">${jami.haq ? pul(jami.haq) : '—'}</td></tr>` : '') ||
         '<tr><td colspan="4" class="soni">Bu davrda reys yo\'q</td></tr>';
+      $('xarajatQism').hidden = !xarajatlar;
+      $('xarajatlar').innerHTML = guruh.map(x => { const xr = (x.xarajat || 0) + x.haq, f = (x.tushum || 0) - xr;
+        return `<tr><td><b>${toza(x.avto)}</b></td><td class="raqam">${pul(x.tushum || 0)}</td><td class="raqam">${pul(xr)}</td>
+          <td class="raqam ${f < 0 ? 'manfiy' : 'kirim'}">${pul(f)}</td></tr>`; }).join('') || '<tr><td colspan="4" class="soni">—</td></tr>';
       tafsil();
     }
     function tafsil() {
@@ -124,7 +149,9 @@
       $('tafsil').innerHTML = x ? `<h2 class="kichik-sarlavha">🚛 ${toza(x.avto)} — ${x.reys} reys</h2>` + x.royxat.map(y => `
         <div class="yozuv"><div class="yuqori"><span class="sana">${sana(y.sana)}</span><span class="nomi">${toza(y.mijozlar?.nomi || '')}</span>
         <span class="summa">${pul(y.miqdor)} ${toza(y.olchov || y.mahsulotlar?.olchov || '')}</span></div>
-        <div class="pastki"><span>${toza(y.mahsulotlar?.nomi || '')}</span></div></div>`).join('') : '';
+        <div class="pastki"><span>${toza(y.mahsulotlar?.nomi || '')}</span></div></div>`).join('') +
+        (x.xRoyxat || []).map(k => `<div class="yozuv chiqim"><div class="yuqori"><span class="sana">${sana(k.sana)}</span>
+          <span class="nomi">💸 ${toza(k.toifa || 'Xarajat')}</span><span class="summa">−${pul(k.summa)}</span></div></div>`).join('') : '';
     }
     $('jadval').addEventListener('click', (e) => {
       const tr = e.target.closest('tr[data-i]');

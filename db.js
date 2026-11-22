@@ -1,10 +1,23 @@
 // Barcha sahifalar uchun umumiy: bazaga ulanish va login tekshiruvi.
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+import { navbat, navbatYubor, tarmoqXatosi } from './navbat.js';
 
 // Kutubxona sahifadagi <script src="vendor/supabase-..."> orqali yuklanadi.
 // Versiyani yangilash: vendor/ ga yangi faylni qo'yib, 3 ta sahifadagi nomini almashtiring.
 const { createClient } = window.supabase;
 export const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Internetsiz ishlash: sayt fayllari telefonda saqlanadi (sw.js);
+// internetsiz kiritilgan yozuvlar internet qaytganda o'zi yuboriladi (navbat.js)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+async function navbatniYubor() {
+  if (!navbat().length || !navigator.onLine) return;
+  const n = await navbatYubor(db);
+  if (n.yuborildi || n.xatolar.length) window.dispatchEvent(new CustomEvent('navbat', { detail: n }));
+}
+window.addEventListener('online', navbatniYubor);
+setTimeout(navbatniYubor, 1500);
+export { navbat, navbatYubor };
 
 // ---------- Rollar ----------
 // Qaysi sahifa qaysi rollarga ochiq (bazadagi RLS qoidalari bilan bir xil)
@@ -22,6 +35,8 @@ export const SAHIFA_ROLLAR = {
   buyurtma:    ['admin', 'rahbar', 'sotuvchi', 'omborchi'],
   reyslar:     ['admin', 'rahbar'],
   sozlamalar:  ['admin', 'rahbar'],
+  foyda:       ['admin', 'rahbar'],
+  ishhaqi:     ['admin', 'rahbar', 'kassir'],
 };
 export const ROL_NOMI = {
   admin: 'Admin', rahbar: 'Rahbar', sotuvchi: 'Sotuvchi', kassir: 'Kassir', omborchi: 'Omborchi',
@@ -33,8 +48,14 @@ let rolKesh;
 export async function rolim(user) {
   if (rolKesh !== undefined) return rolKesh;
   const { data, error } = await db.from('xodimlar').select('rol, faol').eq('user_id', user.id).maybeSingle();
+  const saqlangan = 'lumant_rol_' + user.id;
+  if (error && tarmoqXatosi(error)) {   // internetsiz — oxirgi ma'lum rol
+    try { rolKesh = localStorage[saqlangan] || null; } catch { rolKesh = null; }
+    return rolKesh;
+  }
   if (error) rolKesh = /xodimlar|schema cache|does not exist/i.test(error.message) ? 'admin' : null;
   else rolKesh = data && data.faol ? data.rol : null;
+  try { if (rolKesh) localStorage[saqlangan] = rolKesh; else delete localStorage[saqlangan]; } catch {}
   return rolKesh;
 }
 export const ruxsat = (rol, sahifa) => !!rol && (SAHIFA_ROLLAR[sahifa] || []).includes(rol);
@@ -42,7 +63,12 @@ export const ruxsat = (rol, sahifa) => !!rol && (SAHIFA_ROLLAR[sahifa] || []).in
 // Login qilinmagan bo'lsa — bosh sahifaga; sahifaga ruxsat bo'lmasa — xabar.
 // Qaytaradi: foydalanuvchi (user.rol bilan).
 export async function loginShart(sahifa) {
-  const { data } = await db.auth.getSession();
+  const { data, error } = await db.auth.getSession();
+  if (!data.session && (!navigator.onLine || tarmoqXatosi(error))) {
+    // Internetsiz: token yangilanmagan bo'lsa ham, telefondagi oxirgi kirish bilan ishlaymiz
+    const u = saqlanganFoydalanuvchi();
+    if (u) data.session = { user: u };
+  }
   if (!data.session) {
     location.replace('index.html');
     return new Promise(() => {});   // sahifa kodi shu yerda to'xtaydi
@@ -58,6 +84,13 @@ export async function loginShart(sahifa) {
     return new Promise(() => {});
   }
   return user;
+}
+
+function saqlanganFoydalanuvchi() {
+  try {
+    const k = Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k));
+    return k ? JSON.parse(localStorage[k])?.user || null : null;
+  } catch { return null; }
 }
 
 // Lotin ↔ kirill qidiruv (qidiruv.js)

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<!-- Tannarx va foyda: retsept + xomashyo narxi → tannarx; sotuv − tannarx − xarajat = sof foyda -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foyda · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Tannarx va foyda</h1>
+  </header>
+
+  <section class="panel">
+    <div class="turlar tort" id="davrlar">
+      <button type="button" data-d="oy">Shu oy</button>
+      <button type="button" data-d="otganoy">O'tgan oy</button>
+      <button type="button" data-d="chorak">3 oy</button>
+      <button type="button" data-d="yil">Yil boshidan</button>
+    </div>
+    <div class="ikki">
+      <label>Dan <input id="dan" type="date"></label>
+      <label>Gacha <input id="gacha" type="date"></label>
+    </div>
+    <p id="holat" class="soni">Yuklanmoqda...</p>
+    <div class="korsatkichlar" id="pl"></div>
+    <p class="tushuntir">Sof foyda = Sotuv − Tannarx (retsept bo'yicha xomashyo) − Xarajatlar (kassadan chiqim:
+      oylik, yoqilg'i, ta'mir...). Yetkazib beruvchiga to'lov, o'tkazma va dollar kassa xarajatga kirmaydi. Faqat so'mdagi hisoblar.</p>
+  </section>
+
+  <section class="panel">
+    <h2 class="kichik-sarlavha">Mahsulotlar bo'yicha</h2>
+    <div class="jadval-oyna">
+      <table>
+        <thead><tr><th>Mahsulot</th><th class="raqam">Sotildi</th><th class="raqam">O'rt. narx</th><th class="raqam">Tannarx</th><th class="raqam">Foyda</th><th class="raqam">%</th></tr></thead>
+        <tbody id="mahsulotlar"></tbody>
+      </table>
+    </div>
+    <p id="nomalum" class="ogoh" hidden></p>
+  </section>
+
+  <section class="panel">
+    <h2 class="kichik-sarlavha">Oylar bo'yicha (oxirgi 6 oy)</h2>
+    <div class="jadval-oyna">
+      <table>
+        <thead><tr><th>Oy</th><th class="raqam">Sotuv</th><th class="raqam">Yalpi foyda</th><th class="raqam">Xarajat</th><th class="raqam">Sof foyda</th></tr></thead>
+        <tbody id="oylar"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 class="kichik-sarlavha">1 birlik tannarxi qanday hisoblandi</h2>
+    <div id="tarkib"></div>
+    <h2 class="kichik-sarlavha">Xomashyo narxlari</h2>
+    <p class="tushuntir">Oxirgi 120 kundagi xaridlar o'rtachasi ("Mahsulot olindi" yozuvlari); xarid bo'lmasa — mahsulotning oxirgi narxi.</p>
+    <div class="jadval-oyna"><table><thead><tr><th>Xomashyo</th><th class="raqam">Narx</th><th>Manba</th></tr></thead><tbody id="xomNarx"></tbody></table></div>
+    <button type="button" class="tugma-oddiy" id="csv">⬇️ Excel'ga yuklash</button>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, pul, toza, hammasi, csvYukla, bugun, kunQosh, valyuta } from './db.js';
+
+    await loginShart('foyda');
+    const $ = (id) => document.getElementById(id);
+    const OY = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+    const XARAJAT_EMAS = new Set(['O\'tkazma', 'Valyuta ayirboshlash', 'Yetkazib beruvchiga', 'Boshlang\'ich qoldiq']);
+    const yaxlit = (n) => Math.round(n);
+
+    const [mj, mh, rt] = await Promise.all([
+      hammasi(() => db.from('mijozlar').select('*').order('id')),
+      db.from('mahsulotlar').select('*').order('nomi'),
+      db.from('retseptlar').select('mahsulot_id, xomashyo_id, miqdor'),
+    ]);
+    if (mj.error || mh.error) { $('holat').textContent = 'Xato: ' + (mj.error || mh.error).message; throw mj.error || mh.error; }
+    const usd = new Set(mj.data.filter(m => valyuta(m) === 'USD').map(m => m.id));
+    const mah = new Map(mh.data.map(m => [m.id, m]));
+    const retsept = rt.error ? [] : rt.data;
+
+    function davr(d) {
+      const b = bugun(), [y, m] = b.split('-').map(Number);
+      const bosh = (yy, mm) => `${yy}-${String(mm).padStart(2, '0')}-01`;
+      if (d === 'oy') return [bosh(y, m), b];
+      if (d === 'chorak') return [bosh(m >= 3 ? y : y - 1, ((m - 3 + 12) % 12) + 1), b];
+      if (d === 'yil') return [bosh(y, 1), b];
+      const [oy, oy_] = m === 1 ? [y - 1, 12] : [y, m - 1];
+      return [bosh(oy, oy_), kunQosh(bosh(y, m), -1)];
+    }
+    function davrTanla(d) {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.toggle('tanlangan', b.dataset.d === d));
+      [$('dan').value, $('gacha').value] = davr(d);
+      hisobla();
+    }
+    $('davrlar').addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) davrTanla(b.dataset.d); });
+    ['dan', 'gacha'].forEach(id => $(id).addEventListener('change', () => {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.remove('tanlangan')); hisobla();
+    }));
+
+    // 6 oy oldingi oy boshi
+    const [by, bm] = bugun().split('-').map(Number);
+    const olti = new Date(by, bm - 6, 1).toLocaleDateString('sv-SE');
+
+    let natija = null, soralgan = 0;
+    async function hisobla() {
+      const dan = $('dan').value, gacha = $('gacha').value;
+      if (!dan || !gacha) return;
+      const men = ++soralgan;
+      $('holat').textContent = 'Hisoblanmoqda...';
+      const boshi = [dan, olti, kunQosh(gacha, -120)].sort()[0];
+      const oxiri = [gacha, bugun()].sort()[1];
+      const [yz, kx] = await Promise.all([
+        hammasi(() => db.from('yozuvlar').select('id, sana, mijoz_id, turi, mahsulot_id, miqdor, narx, summa')
+          .in('turi', ['yuk_berildi', 'mahsulot_olindi']).gte('sana', boshi).lte('sana', oxiri).order('id')),
+        hammasi(() => db.from('kassa_yozuvlar').select('id, sana, kassa, summa, toifa')
+          .eq('yonalish', 'chiqim').gte('sana', boshi).lte('sana', oxiri).order('id')),
+      ]);
+      if (men !== soralgan) return;
+      if (yz.error) { $('holat').textContent = 'Xato: ' + yz.error.message; return; }
+      const yozuv = yz.data.filter(y => !usd.has(y.mijoz_id));
+      const kassa = kx.error ? [] : kx.data.filter(k => k.kassa !== 'dollar' && !XARAJAT_EMAS.has(k.toifa));
+
+      // 1) Xarid narxlari (oxirgi 120 kun, gacha sanasigacha)
+      const xarid = new Map();
+      for (const y of yozuv) if (y.turi === 'mahsulot_olindi' && y.sana >= kunQosh(gacha, -120) && y.sana <= gacha
+                                  && Number(y.miqdor) > 0 && Number(y.summa)) {
+        const x = xarid.get(y.mahsulot_id) || { s: 0, q: 0 };
+        x.s += Math.abs(Number(y.summa)); x.q += Number(y.miqdor);
+        xarid.set(y.mahsulot_id, x);
+      }
+      const narxManba = new Map();
+      const xomNarx = (id) => {
+        if (narxManba.has(id)) return narxManba.get(id).narx;
+        const x = xarid.get(id);
+        const r = x ? { narx: x.s / x.q, manba: 'xarid' } : mah.get(id)?.oxirgi_narx ? { narx: Number(mah.get(id).oxirgi_narx), manba: 'oxirgi narx' } : { narx: null, manba: 'yo\'q' };
+        narxManba.set(id, r);
+        return r.narx;
+      };
+      // 2) Mahsulot tannarxi: retsept bo'yicha; retsepti yo'q bo'lsa — qayta sotish (xarid narxi)
+      const tannarxKesh = new Map();
+      const tannarx = (pid) => {
+        if (tannarxKesh.has(pid)) return tannarxKesh.get(pid);
+        const r = retsept.filter(x => x.mahsulot_id === pid);
+        let t = null;
+        if (r.length) {
+          const qism = r.map(x => xomNarx(x.xomashyo_id));
+          t = qism.some(n => n === null) ? null : r.reduce((s, x, i) => s + Number(x.miqdor) * qism[i], 0);
+        } else if (xarid.has(pid)) t = xomNarx(pid);
+        tannarxKesh.set(pid, t);
+        return t;
+      };
+
+      // 3) Davr bo'yicha hisob
+      function pl(d1, d2) {
+        const sot = yozuv.filter(y => y.turi === 'yuk_berildi' && y.sana >= d1 && y.sana <= d2);
+        let sotuv = 0, tan = 0, nomalum = 0;
+        for (const y of sot) {
+          sotuv += Number(y.summa || 0);
+          const t = y.mahsulot_id ? tannarx(y.mahsulot_id) : null;
+          if (t === null) nomalum += Number(y.summa || 0); else tan += t * Number(y.miqdor || 0);
+        }
+        const xarajat = kassa.filter(k => k.sana >= d1 && k.sana <= d2).reduce((s, k) => s + Number(k.summa), 0);
+        return { sot, sotuv, tan, nomalum, yalpi: sotuv - tan - nomalum, xarajat, sof: sotuv - tan - nomalum - xarajat };
+      }
+      const p = pl(dan, gacha);
+      natija = p;
+      $('holat').textContent = `${p.sot.length} ta sotuv`;
+      const kp = (nom, v, cls = '', izoh = '') => `<div class="korsatkich"><span>${nom}</span><b class="${cls}">${pul(yaxlit(v))}</b>${izoh ? `<small>${izoh}</small>` : ''}</div>`;
+      $('pl').innerHTML = kp('🚚 Sotuv', p.sotuv) + kp('🧱 Tannarx', p.tan + p.nomalum, '', p.nomalum ? 'taxminiy' : '') +
+        kp('📦 Yalpi foyda', p.yalpi, p.yalpi < 0 ? 'manfiy' : 'kirim', p.sotuv ? Math.round(p.yalpi / p.sotuv * 100) + '%' : '') +
+        kp('💸 Xarajatlar', p.xarajat) +
+        kp('💰 Sof foyda', p.sof, p.sof < 0 ? 'manfiy' : 'kirim', p.sotuv ? 'marja ' + Math.round(p.sof / p.sotuv * 100) + '%' : '');
+
+      // Mahsulotlar jadvali
+      const g = new Map();
+      for (const y of p.sot) {
+        const k = y.mahsulot_id ?? 0;
+        const x = g.get(k) || { id: k, q: 0, s: 0 };
+        x.q += Number(y.miqdor || 0); x.s += Number(y.summa || 0);
+        g.set(k, x);
+      }
+      const qatorlar = [...g.values()].map(x => {
+        const t = x.id ? tannarx(x.id) : null;
+        return { ...x, nomi: mah.get(x.id)?.nomi || '(mahsulotsiz)', olchov: mah.get(x.id)?.olchov || '', t,
+                 foyda: t === null ? null : x.s - t * x.q };
+      }).sort((a, b) => b.s - a.s);
+      natija.qatorlar = qatorlar;
+      $('mahsulotlar').innerHTML = qatorlar.map(x => `<tr>
+          <td>${toza(x.nomi)}</td><td class="raqam">${pul(x.q)} ${toza(x.olchov)}</td>
+          <td class="raqam">${x.q ? pul(yaxlit(x.s / x.q)) : '—'}</td>
+          <td class="raqam">${x.t === null ? '<span class="manfiy">?</span>' : pul(yaxlit(x.t))}</td>
+          <td class="raqam ${x.foyda < 0 ? 'manfiy' : ''}">${x.foyda === null ? '—' : pul(yaxlit(x.foyda))}</td>
+          <td class="raqam">${x.foyda === null || !x.s ? '' : Math.round(x.foyda / x.s * 100)}</td></tr>`).join('') ||
+        '<tr><td colspan="6" class="soni">Bu davrda sotuv yo\'q</td></tr>';
+      const nom = qatorlar.filter(x => x.t === null);
+      $('nomalum').hidden = !nom.length;
+      $('nomalum').textContent = nom.length ? `⚠️ Tannarxi noma'lum: ${nom.map(x => x.nomi).join(', ')}. Ularga "Ishlab chiqarish"da retsept yozing yoki xomashyo narxini kiriting — hozircha butun summasi tannarx deb olindi.` : '';
+
+      // Oylar
+      const oylar = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(by, bm - 1 - i, 1), d1 = d.toLocaleDateString('sv-SE');
+        const d2 = kunQosh(new Date(by, bm - i, 1).toLocaleDateString('sv-SE'), -1);
+        oylar.push({ nom: OY[d.getMonth()] + ' ' + d.getFullYear(), ...pl(d1, d2) });
+      }
+      natija.oylar = oylar;
+      $('oylar').innerHTML = oylar.reverse().map(o => `<tr><td>${o.nom}</td><td class="raqam">${pul(yaxlit(o.sotuv))}</td>
+        <td class="raqam">${pul(yaxlit(o.yalpi))}</td><td class="raqam">${pul(yaxlit(o.xarajat))}</td>
+        <td class="raqam ${o.sof < 0 ? 'manfiy' : 'kirim'}"><b>${pul(yaxlit(o.sof))}</b></td></tr>`).join('');
+
+      // Tannarx tarkibi (sotilgan, retseptli mahsulotlar)
+      $('tarkib').innerHTML = qatorlar.filter(x => retsept.some(r => r.mahsulot_id === x.id)).map(x => `
+        <div class="yozuv"><div class="yuqori"><span class="nomi">${toza(x.nomi)}</span><span class="summa">${x.t === null ? '?' : pul(yaxlit(x.t))} / ${toza(x.olchov)}</span></div>
+        <div class="pastki"><span>${retsept.filter(r => r.mahsulot_id === x.id).map(r => { const n = xomNarx(r.xomashyo_id);
+          return `${toza(mah.get(r.xomashyo_id)?.nomi || '')} ${pul(r.miqdor)} × ${n === null ? '?' : pul(yaxlit(n))}`; }).join(' + ')}</span></div></div>`).join('') ||
+        '<p class="soni">Sotilgan mahsulotlarda retsept yo\'q</p>';
+      $('xomNarx').innerHTML = [...narxManba].map(([id, r]) => `<tr><td>${toza(mah.get(id)?.nomi || '#' + id)}</td>
+        <td class="raqam">${r.narx === null ? '—' : pul(Math.round(r.narx * 100) / 100)}</td><td>${r.manba}</td></tr>`).join('') ||
+        '<tr><td colspan="3" class="soni">—</td></tr>';
+    }
+    $('csv').addEventListener('click', () => {
+      if (!natija) return;
+      csvYukla(`foyda-${$('dan').value}_${$('gacha').value}`,
+        ['Mahsulot', 'Sotildi', 'O\'lchov', 'Sotuv summasi', 'Tannarx (1 birlik)', 'Foyda'],
+        [...natija.qatorlar.map(x => [x.nomi, x.q, x.olchov, x.s, x.t === null ? '' : yaxlit(x.t), x.foyda === null ? '' : yaxlit(x.foyda)]),
+         [], ['Sotuv', natija.sotuv], ['Tannarx', yaxlit(natija.tan + natija.nomalum)], ['Xarajatlar', natija.xarajat], ['Sof foyda', yaxlit(natija.sof)]]);
+    });
+
+    davrTanla('oy');
+  </script>
+</body>
+</html>

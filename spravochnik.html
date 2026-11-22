@@ -59,6 +59,18 @@
         <select id="f_valyuta"><option value="UZS">So'm</option><option value="USD">Dollar ($)</option></select>
       </label>
       <p id="f_qoldiq" class="soni"></p>
+      <div id="kabinetQism" class="maxsus-narx" hidden>
+        <h3 class="kichik-sarlavha">🔗 Mijoz kabineti</h3>
+        <p class="tushuntir">Mijoz shu havola orqali (parolsiz) o'z qarzini, sverkasini ko'radi va buyurtma beradi.
+          Havolani faqat shu mijozga yuboring. Yangilasangiz — eskisi ishlamay qoladi.</p>
+        <p id="kabinetHavola" class="kabinet-havola"></p>
+        <div class="ikki">
+          <button type="button" id="kYubor">📲 Yuborish</button>
+          <button type="button" class="tugma-oddiy" id="kYangi">🔄 Yangi havola</button>
+        </div>
+        <button type="button" class="tugma-oddiy" id="kOchir">✖ Havolani o'chirish</button>
+        <p id="kXato" class="xato"></p>
+      </div>
       <div id="narxQism" class="maxsus-narx" hidden>
         <h3 class="kichik-sarlavha">💲 Maxsus narxlar (shu mijoz uchun)</h3>
         <div id="narxRoyxat"></div>
@@ -91,6 +103,22 @@
           <option value="tayyor">🧱 Tayyor mahsulot</option>
         </select>
       </label>
+      <label id="minQism" hidden>Minimal qoldiq (kam qolsa ogohlantiradi) <input id="f_min" inputmode="decimal" placeholder="masalan 20"></label>
+      <div id="pasportQism" class="maxsus-narx" hidden>
+        <h3 class="kichik-sarlavha">📄 Sifat pasporti (nakladnoy bilan chiqadi)</h3>
+        <div class="ikki">
+          <label>Sinf <input id="p_sinf" placeholder="B15"></label>
+          <label>Mustahkamlik <input id="p_mustahkamlik" placeholder="19,6 MPa"></label>
+          <label>Harakatchanlik <input id="p_harakatchanlik" placeholder="P3 (OK 10–15 sm)"></label>
+          <label>Sovuqqa chidamlilik <input id="p_sovuqqa" placeholder="F150"></label>
+          <label>Suv o'tkazmaslik <input id="p_suv_otkazmaslik" placeholder="W6"></label>
+          <label>To'ldiruvchi <input id="p_toldiruvchi" placeholder="Shag'al 5–20 mm"></label>
+        </div>
+        <label>Standart <input id="p_standart" placeholder="GOST 7473-2010"></label>
+        <label>Izoh <input id="p_izoh"></label>
+        <button type="button" class="tugma-oddiy" id="pSaqla">Pasportni saqlash</button>
+        <p id="pXato" class="xato"></p>
+      </div>
     </div>
 
     <button type="submit" id="saqla">Saqlash</button>
@@ -98,7 +126,7 @@
   </form>
 
   <script type="module">
-    import { db, loginShart, pul, sana, toza, kalit, mos, saralash, hammasi, oxshashJuftlar, valyuta, belgi } from './db.js';
+    import { db, loginShart, pul, sana, toza, kalit, mos, saralash, hammasi, oxshashJuftlar, valyuta, belgi, ulash } from './db.js';
 
     const user = await loginShart('spravochnik');
     const $ = (id) => document.getElementById(id);
@@ -110,17 +138,15 @@
     }
 
     // ---------- Yuklash ----------
-    let mijozlar = [], mahsulotlar = [], turkumBor = true, valyutaBor = false;
+    let mijozlar = [], mahsulotlar = [], turkumBor = true, valyutaBor = false, minBor = false;
     async function yukla() {
       const [m, q] = await Promise.all([
         hammasi(() => db.from('mijozlar').select('*').order('nomi').order('id')),   // '*' — valyuta (09) bo'lsa
         hammasi(() => db.from('mijoz_qoldiq').select('id, qoldiq, oxirgi_yozuv').order('id')),
       ]);
-      let p = await hammasi(() => db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx, turkum').order('nomi').order('id'));
-      if (p.error && /turkum/.test(p.error.message)) {   // 04_ombor.sql ishga tushirilmagan
-        turkumBor = false;
-        p = await hammasi(() => db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx').order('nomi').order('id'));
-      }
+      // '*' — turkum (04), min_qoldiq (11) ustunlari bo'lsa ular ham keladi
+      const p = await hammasi(() => db.from('mahsulotlar').select('*').order('nomi').order('id'));
+      if (p.data?.length) { turkumBor = 'turkum' in p.data[0]; minBor = 'min_qoldiq' in p.data[0]; }
       const xato = m.error || q.error || p.error;
       if (xato) { $('holat').textContent = 'Xato: ' + xato.message; return false; }
       const qoldiq = new Map(q.data.map(r => [r.id, r]));
@@ -195,6 +221,10 @@
       $('f_valyuta').value = valyuta(x);
       $('f_valyuta').disabled = !!x?.oxirgi_yozuv;   // yozuvi bor mijozning valyutasi o'zgarmaydi
       narxlarOch(mj ? x : null);
+      kabinetOch(mj ? x : null);
+      $('minQism').hidden = mj || !minBor;
+      $('f_min').value = x?.min_qoldiq != null ? pul(x.min_qoldiq) : '';
+      pasportOch(!mj && x?.turkum === 'tayyor' ? x : null);
       $('f_qoldiq').innerHTML = mj && x
         ? `Qoldiq: <b>${pul(x.qoldiq)} ${belgi(valyuta(x))}</b> · <a href="sverka.html?mijoz=${encodeURIComponent(x.id)}">Sverkani ochish</a>` : '';
       $('xato').textContent = '';
@@ -253,6 +283,11 @@
         if (Number.isNaN(narx) || narx < 0) { xato.textContent = 'Narxni to\'g\'ri yozing'; return; }
         qator = { nomi, olchov: $('f_olchov').value.trim() || null, oxirgi_narx: narx };
         if (turkumBor) qator.turkum = $('f_turkum').value || null;
+        if (minBor) {
+          const mn = son($('f_min').value);
+          if (Number.isNaN(mn) || mn < 0) { xato.textContent = 'Minimal qoldiqni to\'g\'ri yozing'; return; }
+          qator.min_qoldiq = mn;
+        }
       }
 
       const tugma = $('saqla');
@@ -281,6 +316,54 @@
       if (tab === 'mijoz') $('f_qoldiq').innerHTML =
         `Qoldiq: <b>${pul(tahrir.qoldiq)} ${belgi(valyuta(tahrir))}</b> · <a href="sverka.html?mijoz=${encodeURIComponent(tahrir.id)}">Sverkani ochish</a>`;
       if (tab === 'mijoz') narxlarOch(tahrir);
+    });
+
+    // ---------- Mijoz kabineti havolasi (11-SQL) ----------
+    const kabinetUrl = (k) => new URL('kabinet.html?k=' + k, location.href).href;
+    function kabinetOch(x) {
+      $('kXato').textContent = '';
+      const mumkin = x && 'kabinet_kalit' in x && ['admin', 'rahbar', 'sotuvchi'].includes(user.rol);
+      $('kabinetQism').hidden = !mumkin;
+      if (!mumkin) return;
+      const k = x.kabinet_kalit;
+      $('kabinetHavola').innerHTML = k ? `<a href="${toza(kabinetUrl(k))}" target="_blank" rel="noopener">${toza(kabinetUrl(k))}</a>` : 'Havola hali yaratilmagan';
+      $('kYubor').textContent = k ? '📲 Yuborish' : '🔗 Havola yaratish';
+      $('kYangi').hidden = $('kOchir').hidden = !k;
+    }
+    async function kalitOzgartir(ochir) {
+      const { data, error } = await db.rpc('kabinet_kalit', { p_mijoz: tahrir.id, p_ochir: ochir });
+      if (error) { $('kXato').textContent = 'Xato: ' + error.message; return false; }
+      tahrir.kabinet_kalit = data;
+      kabinetOch(tahrir);
+      return true;
+    }
+    $('kYubor').addEventListener('click', async () => {
+      if (!tahrir.kabinet_kalit && !(await kalitOzgartir(false))) return;
+      ulash(`Assalomu alaykum, ${tahrir.nomi}!\nHisobingiz va buyurtma berish uchun havola:\n${kabinetUrl(tahrir.kabinet_kalit)}`);
+    });
+    $('kYangi').addEventListener('click', () => { if (confirm('Yangi havola yaratilsinmi? Eski havola ishlamay qoladi.')) kalitOzgartir(false); });
+    $('kOchir').addEventListener('click', () => { if (confirm('Havola o\'chirilsinmi? Mijoz kabinetga kira olmay qoladi.')) kalitOzgartir(true); });
+
+    // ---------- Sifat pasporti (11-SQL) ----------
+    const PASPORT = ['sinf', 'mustahkamlik', 'harakatchanlik', 'sovuqqa', 'suv_otkazmaslik', 'toldiruvchi', 'standart', 'izoh'];
+    async function pasportOch(x) {
+      $('pasportQism').hidden = true;
+      $('pXato').textContent = '';
+      if (!x) return;
+      const { data, error } = await db.from('beton_pasport').select('*').eq('mahsulot_id', x.id).maybeSingle();
+      if (error || tahrir?.id !== x.id) return;   // jadval yo'q yoki boshqa mahsulot ochildi
+      PASPORT.forEach(k => $('p_' + k).value = data?.[k] || '');
+      const yoza = ['admin', 'rahbar', 'omborchi'].includes(user.rol);
+      PASPORT.forEach(k => $('p_' + k).disabled = !yoza);
+      $('pSaqla').hidden = !yoza;
+      $('pasportQism').hidden = false;
+    }
+    $('pSaqla').addEventListener('click', async () => {
+      const o = { mahsulot_id: tahrir.id, updated_at: new Date().toISOString() };
+      PASPORT.forEach(k => o[k] = $('p_' + k).value.trim() || null);
+      const { error } = await db.from('beton_pasport').upsert(o);
+      $('pXato').textContent = error ? 'Saqlanmadi: ' + error.message : '✅ Pasport saqlandi';
+      $('pXato').classList.toggle('ok', !error);
     });
 
     // ---------- Maxsus narxlar (09-SQL) ----------

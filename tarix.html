@@ -37,6 +37,10 @@
           <option value="buyurtmalar">Buyurtmalar</option>
           <option value="mijoz_narx">Maxsus narxlar</option>
           <option value="sozlamalar">Sozlamalar</option>
+          <option value="kassa_yopish">Kassa yopish</option>
+          <option value="ishchilar">Ishchilar</option>
+          <option value="tabel">Tabel</option>
+          <option value="beton_pasport">Sifat pasporti</option>
         </select>
       </label>
       <label>Amal
@@ -64,6 +68,7 @@
       yozuvlar: 'Qarz yozuvi', kassa_yozuvlar: 'Kassa', ombor_harakat: 'Ombor', ishlab_chiqarish: 'Ishlab chiqarish',
       mijozlar: 'Mijoz', mahsulotlar: 'Mahsulot', retseptlar: 'Retsept', xodimlar: 'Xodim',
       buyurtmalar: 'Buyurtma', mijoz_narx: 'Maxsus narx', sozlamalar: 'Sozlama',
+      kassa_yopish: 'Kassa yopish', beton_pasport: 'Sifat pasporti', ishchilar: 'Ishchi', tabel: 'Tabel',
     };
     const AMAL = { qoshildi: '➕ qo\'shildi', ozgardi: '✏️ o\'zgartirildi', ochirildi: '🗑 o\'chirildi' };
     const MAYDON = {
@@ -73,8 +78,10 @@
       olchov: 'O\'lchov', oxirgi_narx: 'Narx', turkum: 'Turkum', rol: 'Rol', faol: 'Faol', ism: 'Ism', email: 'Email',
       valyuta: 'Valyuta', vaqt: 'Vaqt', manzil: 'Manzil', holat: 'Holat', korxona_nomi: 'Korxona', inn: 'INN',
       rekvizit: 'Rekvizit', nakladnoy_izoh: 'Nakladnoy matni',
+      hisobda: 'Hisobda', sanaldi: 'Sanaldi', farq: 'Farq', stavka: 'Stavka', stavka_turi: 'Stavka turi', lavozim: 'Lavozim',
+      min_qoldiq: 'Min. qoldiq', kabinet_kalit: 'Kabinet havolasi', ishchi_id: 'Ishchi', sinf: 'Sinf',
     };
-    const YASHIRIN = new Set(['id', 'kiritgan', 'kiritilgan_vaqt', 'created_at', 'updated_at', 'user_id', 'eski_kiritgan', 'yozuv_id', 'ishlab_id']);
+    const YASHIRIN = new Set(['id', 'kiritgan', 'kiritilgan_vaqt', 'created_at', 'updated_at', 'user_id', 'eski_kiritgan', 'yozuv_id', 'ishlab_id', 'client_id']);
     const SONLI = new Set(['miqdor', 'narx', 'summa', 'oxirgi_narx']);
 
     // Raqamlar o'rniga nomlar

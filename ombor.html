@@ -31,6 +31,7 @@
     </div>
     <input id="qidir" placeholder="Mahsulot qidirish..." autocomplete="off">
     <label class="belgi"><input type="checkbox" id="hammasi"> Harakati yo'qlarini ham ko'rsatish</label>
+    <div id="kamQoldi" class="ogoh" hidden></div>
     <p id="holat" class="soni">Yuklanmoqda...</p>
     <div id="royxat"></div>
   </section>
@@ -102,7 +103,7 @@
     let mahsulotlar = [];
     async function yukla() {
       const { data, error } = await db.from('ombor_qoldiq')
-        .select('id, nomi, olchov, turkum, qoldiq, harakatlar').order('nomi');
+        .select('*').order('nomi');   // '*' — min_qoldiq (11) bo'lsa u ham
       if (error) {
         $('holat').textContent = /ombor_qoldiq|schema cache|does not exist/i.test(error.message)
           ? 'Ombor jadvali hali bazada yo\'q: supabase/04_ombor.sql ni ishga tushiring.'
@@ -111,8 +112,18 @@
         return false;
       }
       mahsulotlar = data.map(m => ({ ...m, qoldiq: Number(m.qoldiq), harakatlar: Number(m.harakatlar) }));
+      const kam = mahsulotlar.filter(kammi);
+      $('kamQoldi').hidden = !kam.length;
+      $('kamQoldi').innerHTML = kam.length ? '⚠️ <b>Kam qolgan:</b> ' + kam.map(m =>
+        `<a href="#" data-kam="${m.id}">${toza(m.nomi)}</a> (${pul(m.qoldiq)} / min ${pul(m.min_qoldiq)} ${toza(m.olchov || '')})`).join(', ') : '';
       return true;
     }
+
+    const kammi = (m) => m.min_qoldiq != null && m.qoldiq < Number(m.min_qoldiq);
+    $('kamQoldi').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-kam]');
+      if (a) { e.preventDefault(); och(mahsulotlar.find(m => m.id == a.dataset.kam)); }
+    });
 
     // ---------- Ro'yxat ----------
     let tab = 'xomashyo';
@@ -147,7 +158,7 @@
         <div class="yozuv bosiladi ${m.harakatlar ? '' : 'xira'}" data-id="${toza(m.id)}">
           <div class="yuqori">
             <span class="nomi">${toza(m.nomi)}</span>
-            <span class="summa ${m.qoldiq < 0 ? 'manfiy' : ''}">${pul(m.qoldiq)} <small>${toza(m.olchov)}</small></span>
+            <span class="summa ${m.qoldiq < 0 || kammi(m) ? 'manfiy' : ''}">${kammi(m) ? '⚠️ ' : ''}${pul(m.qoldiq)} <small>${toza(m.olchov)}</small></span>
           </div>
         </div>`).join('');
     }

@@ -304,3 +304,19 @@ tr.yetmaydi td { background: #fdecea; }
 .ochir-kichik { margin: 0; width: auto; padding: 4px 10px; background: #f6f2ee; color: #8a6a50; font-size: 13px; }
 .kassa-qoldiq.tort { grid-template-columns: repeat(2, 1fr); }
 .zaxira-eslat { display: block; text-decoration: none; text-align: center; font-weight: 600; }
+.kabinet-havola { font-size: 13px; overflow-wrap: anywhere; background: #fbefe4; padding: 8px 10px; border-radius: 8px; }
+.nakl-pasport { margin-top: 10px; font-size: 12px; } .nakl-pasport .nakl-jadval { margin-top: 4px; }
+
+/* ---------- Ish haqi: tabel kalendari ---------- */
+.kalendar-bosh, .kalendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.kalendar-bosh span { text-align: center; font-size: 12px; color: #8a6a50; }
+.kun-katak { margin: 0; padding: 4px 0; min-height: 44px; background: white; color: #5A2E0E; border: 1px solid #eee3da; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; }
+.kun-katak b { font-size: 16px; min-height: 18px; }
+.kun-katak.ish { background: #e6f4ea; border-color: #1e8449; color: #1e8449; }
+.kun-katak.yarim { background: #fff4d6; border-color: #c9a227; color: #7a5a00; }
+.kun-katak.yoq { background: #fdecea; border-color: #c0392b; color: #c0392b; }
+.kun-katak.bugun { outline: 2px solid #E8731A; }
+.kun-katak:disabled { opacity: 1; }
+#tahrirQism { margin-top: 12px; }
+#tahrirQism summary { cursor: pointer; color: #E8731A; font-weight: 600; padding: 8px 0; }
+.kun input { min-width: 0; width: 100%; box-sizing: border-box; }

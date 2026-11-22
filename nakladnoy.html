@@ -24,6 +24,7 @@
   <section class="panel ekranda">
     <label class="belgi"><input type="checkbox" id="qarzKorsat" checked> Mijozning umumiy qarzini ko'rsatish</label>
     <label class="belgi"><input type="checkbox" id="narxKorsat" checked> Narx va summani ko'rsatish</label>
+    <label class="belgi" id="pasportBelgi" hidden><input type="checkbox" id="pasportKorsat" checked> Sifat pasportini qo'shish</label>
     <button type="button" id="chop">🖨 Chop etish / PDF</button>
     <button type="button" class="tugma-oddiy" id="ulash">📲 Mijozga yuborish (Telegram)</button>
     <p id="holat" class="xato">Yuklanmoqda...</p>
@@ -50,6 +51,19 @@
     if (new Set(yoz.map(y => y.mijoz_id)).size > 1) { $('holat').textContent = 'Bir nakladnoyda faqat bitta mijoz bo\'ladi'; throw new Error(); }
 
     const { data: mj } = await db.from('mijoz_qoldiq').select('*').eq('id', yoz[0].mijoz_id).single();
+    // Sifat pasporti (11-SQL; jadval bo'lmasa — yo'q)
+    const { data: pas } = await db.from('beton_pasport').select('*').in('mahsulot_id', yoz.map(y => y.mahsulot_id).filter(Boolean));
+    const pasportlar = (pas || []).filter(p => ['sinf', 'mustahkamlik', 'harakatchanlik', 'sovuqqa', 'suv_otkazmaslik', 'toldiruvchi', 'standart'].some(k => p[k]));
+    $('pasportBelgi').hidden = !pasportlar.length;
+    const PAS = [['sinf', 'Sinf (marka)'], ['mustahkamlik', 'Siqilishga mustahkamlik'], ['harakatchanlik', 'Harakatchanlik'],
+                 ['sovuqqa', 'Sovuqqa chidamlilik'], ['suv_otkazmaslik', 'Suv o\'tkazmaslik'], ['toldiruvchi', 'To\'ldiruvchi'], ['standart', 'Standart']];
+    const pasportHtml = () => !pasportlar.length || !$('pasportKorsat').checked ? '' :
+      `<div class="nakl-pasport"><b>SIFAT PASPORTI</b>${pasportlar.map(p => {
+        const y = yoz.find(y => y.mahsulot_id === p.mahsulot_id);
+        return `<table class="nakl-jadval"><tr><th colspan="2" class="chap">${toza(y?.mahsulotlar?.nomi || '')} — ${pul(yoz.filter(x => x.mahsulot_id === p.mahsulot_id).reduce((s, x) => s + Number(x.miqdor || 0), 0))} ${toza(y?.olchov || '')}</th></tr>
+          ${PAS.filter(([k]) => p[k]).map(([k, n]) => `<tr><td class="chap">${n}</td><td class="chap">${toza(p[k])}</td></tr>`).join('')}
+          ${p.izoh ? `<tr><td colspan="2" class="chap">${toza(p.izoh)}</td></tr>` : ''}</table>`; }).join('')}
+        <div class="nakl-imzo"><div>Laboratoriya: ____________</div></div></div>`;
     const v = valyuta(mj), b = belgi(v);
     const jami = yoz.reduce((s, y) => s + Math.abs(Number(y.summa || 0)), 0);
     const avto = [...new Set(yoz.map(y => y.avto_raqami).filter(Boolean))].join(', ');
@@ -82,6 +96,7 @@
         ${qarz ? `<p class="nakl-soz">Umumiy hisob holati: <b>${pul(Math.abs(mj.qoldiq))} ${b}</b> —
           ${Number(mj.qoldiq) > 0 ? 'mijoz qarzi' : Number(mj.qoldiq) < 0 ? 'mijoz avansi' : 'hisob yopiq'}</p>` : ''}
         ${soz.nakladnoy_izoh ? `<p class="nakl-izoh">${toza(soz.nakladnoy_izoh)}</p>` : ''}
+        ${pasportHtml()}
         <div class="nakl-imzo">
           <div>Topshirdi: ____________</div><div>Haydovchi: ____________</div><div>Qabul qildi: ____________</div>
         </div>
@@ -90,7 +105,7 @@
     function chiz() {
       $('varaq').innerHTML = nusxa('1-nusxa · korxonaga') + '<div class="nakl-kesish">✂ - - - - - - - - - - - - - - - - - - - - - - - -</div>' + nusxa('2-nusxa · mijozga');
     }
-    ['qarzKorsat', 'narxKorsat'].forEach(id => $(id).addEventListener('change', chiz));
+    ['qarzKorsat', 'narxKorsat', 'pasportKorsat'].forEach(id => $(id).addEventListener('change', chiz));
     $('chop').addEventListener('click', () => window.print());
     $('ulash').addEventListener('click', () => {
       const narx = $('narxKorsat').checked;

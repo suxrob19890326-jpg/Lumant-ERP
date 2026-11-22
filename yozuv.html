@@ -93,6 +93,7 @@
 
   <script type="module">
     import { db, loginShart, pul, toza, kalit, mos, saralash, hammasi, valyuta, belgi } from './db.js';
+    import { tarmoqXatosi, navbatgaQosh, navbat } from './navbat.js';
 
     const user = await loginShart('yozuv');
 
@@ -121,11 +122,21 @@
       db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx').order('nomi'),
       hammasi(() => db.from('mijoz_narx').select('mijoz_id, mahsulot_id, narx').order('mijoz_id')),
     ]);
+    // Internetsiz: oxirgi yuklangan ro'yxatlar telefondan olinadi
+    const KESH = 'lumant_kesh_yozuv';
+    let internetsiz = false;
     if (mj.error || mh.error) {
-      $('xato').textContent = 'Xato: ' + (mj.error || mh.error).message;
-      throw mj.error || mh.error;
+      const e = mj.error || mh.error;
+      let k = null;
+      try { k = JSON.parse(localStorage[KESH] || 'null'); } catch {}
+      if (!tarmoqXatosi(e) || !k) { $('xato').textContent = tarmoqXatosi(e) ? 'Internet yo\'q. Bir marta internet bilan oching — keyin internetsiz ham ishlaydi.' : 'Xato: ' + e.message; throw e; }
+      internetsiz = true;
+      mj.data = k.mijozlar; mh.data = k.mahsulotlar; mn.data = k.maxsus;
+    } else {
+      try { localStorage[KESH] = JSON.stringify({ mijozlar: mj.data.map(m => ({ id: m.id, nomi: m.nomi, qoldiq: m.qoldiq, valyuta: m.valyuta })),
+        mahsulotlar: mh.data, maxsus: mn.data || [] }); } catch {}
     }
-    $('xato').textContent = '';
+    $('xato').textContent = internetsiz ? '📴 Internet yo\'q — yozuvlar telefonda saqlanadi va internet qaytganda o\'zi yuboriladi' : '';
     const mijozlar = mj.data;
     const mahsulotlar = mh.data;
     // Maxsus narxlar (09-SQL'gacha bo'sh)
@@ -206,7 +217,7 @@
         const nomi = qidir.value.trim();
         if (!confirm(`"${nomi}" yangi mijoz sifatida qo'shilsinmi?`)) return;
         const { data, error } = await db.from('mijozlar').insert({ nomi }).select('id, nomi').single();
-        if (error) { $('xato').textContent = 'Mijoz qo\'shilmadi: ' + error.message; return; }
+        if (error) { $('xato').textContent = tarmoqXatosi(error) ? 'Internetsiz yangi mijoz qo\'shib bo\'lmaydi — ro\'yxatdagisini tanlang' : 'Mijoz qo\'shilmadi: ' + error.message; return; }
         const yangi = { ...data, qoldiq: 0 };
         mijozlar.push(yangi);
         mijozlar.sort((a, b) => a.nomi.localeCompare(b.nomi));
@@ -265,21 +276,32 @@
       if (!(summa > 0)) { xato.textContent = 'Summani to\'g\'ri yozing'; return; }
       if (!MAHSULOTLI.includes(turi)) yozuv.kassa = kassa;   // kassaga o'zi tushadi
       yozuv.summa = summa;   // belgini (+/−) baza o'zi qo'yadi
+      if (crypto.randomUUID) yozuv.client_id = crypto.randomUUID();   // internetsiz navbatda ikki marta tushmasin
 
       const tugma = $('saqla');
       tugma.disabled = true;
       tugma.textContent = 'Saqlanmoqda...';
-      let { data: yangi, error } = await db.from('yozuvlar').insert(yozuv).select('id').single();
-      // Bazada kassa hali sozlanmagan bo'lsa (03_kassa.sql ishga tushirilmagan) — kassasiz saqlaymiz
-      let kassasiz = false;
-      if (error && yozuv.kassa && /kassa/i.test(error.message) &&
-          (error.code === 'PGRST204' || error.code === '42703' || /column|does not exist/i.test(error.message))) {
-        delete yozuv.kassa;
-        kassasiz = true;
+      // Bazada yangi ustun hali yo'q bo'lsa (kassa — 03, client_id — 11) — o'sha ustunsiz qayta urinamiz
+      let yangi, error, kassasiz = false;
+      for (let urinish = 0; urinish < 3; urinish++) {
         ({ data: yangi, error } = await db.from('yozuvlar').insert(yozuv).select('id').single());
+        const ustunYoq = error && (error.code === 'PGRST204' || error.code === '42703' || /column|does not exist/i.test(error.message || ''));
+        const ustun = ustunYoq && ['kassa', 'client_id'].find(u => u in yozuv && (error.message || '').includes(u));
+        if (!ustun) break;
+        delete yozuv[ustun];
+        if (ustun === 'kassa') kassasiz = true;
       }
       tugma.disabled = false;
       tugma.textContent = 'Saqlash';
+      if (error && tarmoqXatosi(error)) {
+        const n = navbatgaQosh(yozuv, mijoz.nomi);
+        $('yangiQoldiq').textContent = '📴 Telefonda saqlandi';
+        $('yangiIzoh').textContent = `Internet yo'q. Navbatda ${n} ta yozuv — internet qaytganda o'zi yuboriladi.`;
+        $('nakladnoy').hidden = true;
+        $('forma').hidden = true;
+        $('tayyor').hidden = false;
+        return;
+      }
       if (error) { xato.textContent = 'Saqlanmadi: ' + error.message; return; }
 
       // Mahsulotning oxirgi narxini yangilab qo'yamiz (keyingi safar o'zi chiqadi)
