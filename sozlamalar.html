@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!-- Sozlamalar: korxona ma'lumotlari (nakladnoy uchun), Telegram kunlik hisobot, zaxira nusxa -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sozlamalar · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Sozlamalar</h1>
+  </header>
+
+  <!-- 1) Zaxira -->
+  <section class="panel">
+    <h2 class="kichik-sarlavha">💾 Zaxira nusxa</h2>
+    <p class="tushuntir">Barcha ma'lumot (mijozlar, yozuvlar, kassa, ombor...) bitta Excel faylga yuklanadi.
+      Haftada bir marta yuklab, kompyuter yoki Telegram'ga saqlab qo'ying.</p>
+    <button type="button" id="zaxira">💾 Zaxira nusxani yuklab olish</button>
+    <p id="zHolat" class="xato"></p>
+  </section>
+
+  <!-- 2) Korxona -->
+  <form class="panel" id="korxona" autocomplete="off">
+    <h2 class="kichik-sarlavha">🏢 Korxona ma'lumotlari</h2>
+    <p class="tushuntir">Nakladnoy va dalolatnomada chiqadi.</p>
+    <label>Korxona nomi <input id="kNomi" required></label>
+    <label>Manzil <input id="kManzil"></label>
+    <div class="ikki">
+      <label>Telefon <input id="kTelefon" inputmode="tel"></label>
+      <label>INN (STIR) <input id="kInn" inputmode="numeric"></label>
+    </div>
+    <label>Bank rekvizitlari <input id="kRekvizit" placeholder="Bank, h/r, MFO"></label>
+    <label>Nakladnoy pastidagi matn <input id="kIzoh" placeholder="Masalan: Yukni tekshirib qabul qildim, e'tirozim yo'q"></label>
+    <button type="submit" id="kSaqla">Saqlash</button>
+    <p id="kHolat" class="xato"></p>
+  </form>
+
+  <!-- 3) Telegram (faqat admin) -->
+  <section class="panel" id="telegram" hidden>
+    <h2 class="kichik-sarlavha">📲 Telegram: har kuni 20:00 da hisobot</h2>
+    <p class="tushuntir">Bugungi sotuv, tushgan pul, kassa, qarzlar va ertangi buyurtmalar Telegram'ingizga keladi.</p>
+    <ol class="yoriqnoma">
+      <li>Telegram'da <b>@BotFather</b> ni oching → <b>/newbot</b> → botga nom bering. U bergan <b>tokenni</b> pastga qo'ying.</li>
+      <li>Yangi botingizni oching va <b>Start</b> ni bosing (yoki biror so'z yozing).</li>
+      <li><b>"Chat raqamini topish"</b> ni bosing, keyin <b>Saqlash</b> va <b>Sinov xabari</b>.</li>
+    </ol>
+    <label>Bot tokeni <input id="tToken" autocapitalize="off" placeholder="123456789:AA..."></label>
+    <label>Chat raqami <input id="tChat" inputmode="numeric" placeholder="masalan 123456789"></label>
+    <button type="button" class="tugma-oddiy" id="tTop">🔎 Chat raqamini topish</button>
+    <label class="belgi"><input type="checkbox" id="tYoq" checked> Har kuni yuborilsin</label>
+    <div class="ikki">
+      <button type="button" id="tSaqla">Saqlash</button>
+      <button type="button" class="tugma-oddiy" id="tSinov">📨 Sinov xabari</button>
+    </div>
+    <p id="tHolat" class="xato"></p>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, jadvalYoq } from './db.js';
+    import { zaxiraYukla } from './zaxira.js';
+
+    const user = await loginShart('sozlamalar');
+    const $ = (id) => document.getElementById(id);
+    const admin = user.rol === 'admin';
+    const xabar = (id, m, ok) => { $(id).textContent = m; $(id).classList.toggle('ok', !!ok); };
+
+    // ---------- Zaxira ----------
+    $('zaxira').addEventListener('click', async () => {
+      $('zaxira').disabled = true;
+      try {
+        const n = await zaxiraYukla(m => xabar('zHolat', m));
+        xabar('zHolat', `✅ Yuklandi: ${n.varaq} ta varaq, ${n.jami} ta qator`, true);
+      } catch (e) { xabar('zHolat', 'Xato: ' + e.message); }
+      $('zaxira').disabled = false;
+    });
+    try { if (localStorage.zaxira_kun) xabar('zHolat', 'Oxirgi zaxira shu telefonda: ' + localStorage.zaxira_kun.split('-').reverse().join('.'), true); } catch {}
+
+    // ---------- Korxona ----------
+    const K = { kNomi: 'korxona_nomi', kManzil: 'manzil', kTelefon: 'telefon', kInn: 'inn', kRekvizit: 'rekvizit', kIzoh: 'nakladnoy_izoh' };
+    const { data: soz, error: se } = await db.from('sozlamalar').select('*').eq('id', 1).maybeSingle();
+    if (se || !soz) {
+      xabar('kHolat', se && jadvalYoq(se) ? 'Sozlamalar hali yoqilmagan: supabase/09_kengaytma.sql ni ishga tushiring.' : (se ? 'Xato: ' + se.message : 'Topilmadi'));
+      $('kSaqla').disabled = true;
+    } else Object.entries(K).forEach(([id, k]) => $(id).value = soz[k] || '');
+    if (!admin) { Object.keys(K).forEach(id => $(id).disabled = true); $('kSaqla').hidden = true; }
+    $('korxona').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const o = { updated_at: new Date().toISOString() };
+      Object.entries(K).forEach(([id, k]) => o[k] = $(id).value.trim() || null);
+      if (!o.korxona_nomi) return xabar('kHolat', 'Korxona nomini yozing');
+      const { data, error } = await db.from('sozlamalar').update(o).eq('id', 1).select().maybeSingle();
+      xabar('kHolat', error ? 'Saqlanmadi: ' + error.message : data ? '✅ Saqlandi' : 'Saqlanmadi: ruxsat yo\'q', !error && data);
+    });
+
+    // ---------- Telegram ----------
+    if (admin) {
+      $('telegram').hidden = false;
+      const { data: tg, error: te } = await db.from('telegram_sozlama').select('*').eq('id', 1).maybeSingle();
+      if (te || !tg) {
+        xabar('tHolat', te && jadvalYoq(te) ? 'Telegram hali yoqilmagan: supabase/10_telegram.sql ni ishga tushiring.' : 'Xato: ' + (te?.message || 'topilmadi'));
+        ['tSaqla', 'tSinov', 'tTop'].forEach(id => $(id).disabled = true);
+      } else { $('tToken').value = tg.token || ''; $('tChat').value = tg.chat_id || ''; $('tYoq').checked = tg.yoqilgan; }
+
+      const token = () => $('tToken').value.trim();
+      $('tTop').addEventListener('click', async () => {
+        if (!/^\d+:[\w-]{20,}$/.test(token())) return xabar('tHolat', 'Avval to\'g\'ri tokenni qo\'ying (masalan 123456789:AA...)');
+        xabar('tHolat', 'Qidirilmoqda...');
+        try {
+          const r = await (await fetch(`https://api.telegram.org/bot${token()}/getUpdates`)).json();
+          if (!r.ok) return xabar('tHolat', 'Token noto\'g\'ri: ' + (r.description || ''));
+          const oxirgi = [...r.result].reverse().find(u => (u.message || u.my_chat_member)?.chat);
+          const chat = (oxirgi?.message || oxirgi?.my_chat_member)?.chat;
+          if (!chat) return xabar('tHolat', 'Xabar topilmadi. Botingizni ochib "Start" ni bosing, keyin qayta urinib ko\'ring.');
+          $('tChat').value = chat.id;
+          xabar('tHolat', `✅ Topildi: ${chat.first_name || chat.title || ''} (${chat.id}). Endi "Saqlash" ni bosing.`, true);
+        } catch (e) { xabar('tHolat', 'Telegram\'ga ulanib bo\'lmadi: ' + e.message); }
+      });
+      $('tSaqla').addEventListener('click', async () => {
+        const { data, error } = await db.from('telegram_sozlama')
+          .update({ token: token() || null, chat_id: $('tChat').value.trim() || null, yoqilgan: $('tYoq').checked, updated_at: new Date().toISOString() })
+          .eq('id', 1).select().maybeSingle();
+        xabar('tHolat', error ? 'Saqlanmadi: ' + error.message : data ? '✅ Saqlandi' : 'Saqlanmadi: ruxsat yo\'q', !error && data);
+      });
+      $('tSinov').addEventListener('click', async () => {
+        xabar('tHolat', 'Yuborilmoqda...');
+        const { error } = await db.rpc('telegram_sinov');
+        xabar('tHolat', error ? 'Yuborilmadi: ' + error.message : '✅ Yuborildi — Telegram\'ingizni tekshiring (bir necha soniyada keladi)', !error);
+      });
+    }
+  </script>
+</body>
+</html>

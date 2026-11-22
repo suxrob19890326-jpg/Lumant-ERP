@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<!-- Buyurtmalar: oldindan yozib qo'yish, kunlik reja, xomashyo yetarlimi, "Yetkazildi" → qarz yozuvi -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buyurtmalar · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Buyurtmalar</h1>
+  </header>
+
+  <section class="panel">
+    <div class="kun">
+      <button type="button" id="oldingi" aria-label="Oldingi kun">‹</button>
+      <input id="kun" type="date">
+      <button type="button" id="keyingi" aria-label="Keyingi kun">›</button>
+    </div>
+    <p id="holat" class="soni">Yuklanmoqda...</p>
+    <div id="kelgusi" class="kelgusi"></div>
+    <div id="jamlar"></div>
+    <div id="xomashyo"></div>
+    <div id="royxat"></div>
+  </section>
+
+  <form class="panel" id="forma" autocomplete="off" hidden>
+    <h2 class="kichik-sarlavha">➕ Yangi buyurtma</h2>
+    <div class="ikki">
+      <label>Yetkazish kuni <input id="fSana" type="date" required></label>
+      <label>Vaqti <input id="fVaqt" placeholder="09:00"></label>
+    </div>
+    <label>Mijoz <input id="qidir" placeholder="Mijoz nomini yozing..."></label>
+    <ul id="takliflar" class="takliflar" hidden></ul>
+    <label>Mahsulot <select id="fMahsulot"><option value="">— tanlang —</option></select></label>
+    <div class="ikki">
+      <label>Miqdor <span id="fOlchov" class="soni"></span><input id="fMiqdor" inputmode="decimal" placeholder="0"></label>
+      <label>Narx <span id="fNarxIzoh" class="soni"></span><input id="fNarx" inputmode="decimal" placeholder="0"></label>
+    </div>
+    <label>Manzil <input id="fManzil" placeholder="Qayerga"></label>
+    <div class="ikki">
+      <label>Telefon <input id="fTelefon" inputmode="tel"></label>
+      <label>Avto <input id="fAvto" placeholder="01 A 123 BC"></label>
+    </div>
+    <label>Izoh <input id="fIzoh" placeholder="ixtiyoriy"></label>
+    <button type="submit" id="saqla">Buyurtmani saqlash</button>
+    <p id="xato" class="xato"></p>
+  </form>
+
+  <script type="module">
+    import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, bugun, kunQosh, jadvalYoq, valyuta, belgi } from './db.js';
+
+    const user = await loginShart('buyurtma');
+    const $ = (id) => document.getElementById(id);
+    const yozadi = ['admin', 'rahbar', 'sotuvchi'].includes(user.rol);
+    const son = (s) => { const t = String(s).replace(/\s/g, '').replace(',', '.'); return t ? Number(t) : null; };
+
+    const [mj, mh, mn] = await Promise.all([
+      hammasi(() => db.from('mijozlar').select('*').order('id')),
+      db.from('mahsulotlar').select('*').order('nomi'),
+      hammasi(() => db.from('mijoz_narx').select('mijoz_id, mahsulot_id, narx').order('mijoz_id')),
+    ]);
+    if (mj.error || mh.error) { $('holat').textContent = 'Xato: ' + (mj.error || mh.error).message; throw mj.error || mh.error; }
+    const mijozlar = mj.data, mahsulotlar = mh.data;
+    const mijozMap = new Map(mijozlar.map(m => [m.id, m])), mahMap = new Map(mahsulotlar.map(m => [m.id, m]));
+    const maxsus = new Map((mn.data || []).map(x => [x.mijoz_id + '-' + x.mahsulot_id, Number(x.narx)]));
+
+    // Retsept va ombor (faqat ko'ra oladiganlarga): xomashyo yetarlimi
+    const [rt, oq] = await Promise.all([
+      db.from('retseptlar').select('mahsulot_id, xomashyo_id, miqdor'),
+      db.from('ombor_qoldiq').select('id, nomi, olchov, qoldiq'),
+    ]);
+    const retsept = rt.error ? [] : rt.data;
+    const ombor = new Map((oq.error ? [] : oq.data).map(r => [r.id, r]));
+
+    // ---------- Kunlik ro'yxat ----------
+    let soralgan = 0, royxat = [];
+    async function yukla() {
+      const kun = $('kun').value, men = ++soralgan;
+      const [r, k] = await Promise.all([
+        db.from('buyurtmalar').select('*').eq('sana', kun).order('vaqt', { nullsFirst: false }).order('id'),
+        db.from('buyurtmalar').select('sana').eq('holat', 'yangi').gte('sana', bugun()).order('sana').limit(500),
+      ]);
+      if (men !== soralgan) return;
+      if (r.error) {
+        $('holat').textContent = jadvalYoq(r.error) ? 'Buyurtmalar hali sozlanmagan: supabase/09_kengaytma.sql ni ishga tushiring.' : 'Xato: ' + r.error.message;
+        return;
+      }
+      royxat = r.data;
+      // Kelgusi kunlar: qaysi kunda nechta buyurtma
+      const kunlar = new Map();
+      (k.data || []).forEach(x => kunlar.set(x.sana, (kunlar.get(x.sana) || 0) + 1));
+      $('kelgusi').innerHTML = [...kunlar].slice(0, 7).map(([s, n]) =>
+        `<button type="button" data-kun="${s}" class="${s === kun ? 'tanlangan' : ''}">${s === bugun() ? 'Bugun' : s === kunQosh(bugun(), 1) ? 'Ertaga' : sana(s).slice(0, 5)} · ${n}</button>`).join('');
+      chiz();
+    }
+
+    function chiz() {
+      const faol = royxat.filter(b => b.holat === 'yangi');
+      $('holat').textContent = royxat.length
+        ? `${royxat.length} ta buyurtma · ${faol.length} tasi kutilmoqda`
+        : 'Bu kunga buyurtma yo\'q';
+
+      // Mahsulotlar bo'yicha jami (kutilayotganlar)
+      const jam = new Map();
+      faol.forEach(b => jam.set(b.mahsulot_id, (jam.get(b.mahsulot_id) || 0) + Number(b.miqdor)));
+      $('jamlar').innerHTML = jam.size ? `<h2 class="kichik-sarlavha">Reja</h2><div class="jadval-oyna"><table>
+        <thead><tr><th>Mahsulot</th><th class="raqam">Miqdor</th></tr></thead><tbody>
+        ${[...jam].map(([id, q]) => `<tr><td>${toza(mahMap.get(id)?.nomi || '#' + id)}</td><td class="raqam">${pul(q)} ${toza(mahMap.get(id)?.olchov || '')}</td></tr>`).join('')}
+        </tbody></table></div>` : '';
+
+      // Xomashyo kerak / bor
+      const kerak = new Map();
+      for (const [id, q] of jam) retsept.filter(r => r.mahsulot_id === id)
+        .forEach(r => kerak.set(r.xomashyo_id, (kerak.get(r.xomashyo_id) || 0) + Number(r.miqdor) * q));
+      $('xomashyo').innerHTML = kerak.size ? `<h2 class="kichik-sarlavha">Xomashyo (retsept bo'yicha)</h2><div class="jadval-oyna"><table>
+        <thead><tr><th>Xomashyo</th><th class="raqam">Kerak</th><th class="raqam">Omborda</th></tr></thead><tbody>
+        ${[...kerak].map(([id, q]) => { const o = ombor.get(id); const bor = Number(o?.qoldiq || 0);
+          return `<tr class="${bor < q ? 'yetmaydi' : ''}"><td>${toza(o?.nomi || mahMap.get(id)?.nomi || '#' + id)}${bor < q ? ' ⚠️' : ''}</td>
+            <td class="raqam">${pul(Math.round(q * 100) / 100)}</td><td class="raqam ${bor < q ? 'manfiy' : ''}">${pul(bor)} ${toza(o?.olchov || '')}</td></tr>`; }).join('')}
+        </tbody></table></div>` : '';
+
+      const HOLAT = { yangi: '⏳ Kutilmoqda', bajarildi: '✅ Yetkazildi', bekor: '✖ Bekor qilindi' };
+      $('royxat').innerHTML = royxat.length ? '<h2 class="kichik-sarlavha">Buyurtmalar</h2>' + royxat.map(b => {
+        const m = mijozMap.get(b.mijoz_id), p = mahMap.get(b.mahsulot_id);
+        return `<div class="yozuv buyurtma ${b.holat}" data-id="${b.id}">
+          <div class="yuqori"><span class="sana">${toza(b.vaqt || '')}</span><span class="nomi">${toza(m?.nomi || '#' + b.mijoz_id)}</span>
+            <span class="summa">${pul(b.miqdor)} ${toza(p?.olchov || '')}</span></div>
+          <div class="pastki"><span>${toza(p?.nomi || '')}${b.narx != null ? ' × ' + pul(b.narx) + ' ' + belgi(valyuta(m)) : ''}
+            ${b.manzil ? ' · 📍 ' + toza(b.manzil) : ''}${b.telefon ? ' · 📞 ' + toza(b.telefon) : ''}${b.avto_raqami ? ' · 🚛 ' + toza(b.avto_raqami) : ''}
+            ${b.izoh ? ' · ' + toza(b.izoh) : ''}</span><span class="q">${HOLAT[b.holat]}</span></div>
+          ${b.holat === 'yangi' && yozadi ? `<div class="ikki buyurtma-tugma">
+            <a class="tugma-ikkinchi" href="yozuv.html?buyurtma=${b.id}">✅ Yetkazildi</a>
+            <button type="button" class="tugma-oddiy" data-bekor="${b.id}">✖ Bekor</button></div>` : ''}
+          ${b.holat === 'bajarildi' && b.yozuv_id ? `<a class="soni" href="nakladnoy.html?id=${b.yozuv_id}">🧾 Nakladnoy</a>` : ''}
+        </div>`;
+      }).join('') : '';
+    }
+
+    $('royxat').addEventListener('click', async (e) => {
+      const t = e.target.closest('[data-bekor]');
+      if (!t || !confirm('Buyurtma bekor qilinsinmi?')) return;
+      const { error } = await db.from('buyurtmalar').update({ holat: 'bekor' }).eq('id', t.dataset.bekor);
+      if (error) { alert('Xato: ' + error.message); return; }
+      yukla();
+    });
+    $('kelgusi').addEventListener('click', (e) => { const b = e.target.closest('[data-kun]'); if (b) kunTanla(b.dataset.kun); });
+    function kunTanla(s) { $('kun').value = s; yukla(); }
+    $('kun').addEventListener('change', yukla);
+    $('oldingi').addEventListener('click', () => kunTanla(kunQosh($('kun').value, -1)));
+    $('keyingi').addEventListener('click', () => kunTanla(kunQosh($('kun').value, 1)));
+
+    // ---------- Yangi buyurtma ----------
+    let mijoz = null;
+    if (yozadi) {
+      $('forma').hidden = false;
+      const tayyor = mahsulotlar.filter(m => m.turkum !== 'xomashyo');
+      $('fMahsulot').innerHTML += tayyor.map(m => `<option value="${m.id}">${toza(m.nomi)}</option>`).join('');
+      const qidir = $('qidir'), tk = $('takliflar');
+      qidir.addEventListener('input', () => {
+        mijoz = null;
+        const soz = qidir.value.trim();
+        if (!soz) { tk.hidden = true; return; }
+        tk.innerHTML = saralash(mijozlar.filter(m => mos(m.nomi, soz)), soz).slice(0, 15)
+          .map(m => `<li data-id="${m.id}"><span>${toza(m.nomi)}</span><small>${toza(m.telefon || '')}</small></li>`).join('') ||
+          '<li class="bosh">Topilmadi — avval "Yangi yozuv" yoki "Spravochniklar"da qo\'shing</li>';
+        tk.hidden = false;
+      });
+      tk.addEventListener('click', (e) => {
+        const li = e.target.closest('li[data-id]');
+        if (!li) return;
+        mijoz = mijozMap.get(Number(li.dataset.id));
+        qidir.value = mijoz.nomi; tk.hidden = true;
+        if (!$('fTelefon').value) $('fTelefon').value = mijoz.telefon || '';
+        narxQoy();
+      });
+      function narxQoy() {
+        const p = mahMap.get(Number($('fMahsulot').value));
+        $('fOlchov').textContent = p?.olchov ? `(${p.olchov})` : '';
+        const mx = p && mijoz ? maxsus.get(mijoz.id + '-' + p.id) : undefined;
+        $('fNarxIzoh').textContent = mx !== undefined ? '(maxsus)' : valyuta(mijoz) === 'USD' ? '($)' : '';
+        if (mx !== undefined) $('fNarx').value = pul(mx);
+        else if (p?.oxirgi_narx && valyuta(mijoz) !== 'USD') $('fNarx').value = pul(p.oxirgi_narx);
+      }
+      $('fMahsulot').addEventListener('change', narxQoy);
+
+      $('forma').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const xato = $('xato'); xato.classList.remove('ok');
+        const miqdor = son($('fMiqdor').value), narx = son($('fNarx').value);
+        if (!mijoz) { xato.textContent = 'Mijozni ro\'yxatdan tanlang'; return; }
+        if (!$('fMahsulot').value) { xato.textContent = 'Mahsulotni tanlang'; return; }
+        if (!(miqdor > 0)) { xato.textContent = 'Miqdorni to\'g\'ri yozing'; return; }
+        if (narx !== null && !(narx >= 0)) { xato.textContent = 'Narxni to\'g\'ri yozing'; return; }
+        const t = (id) => $(id).value.trim() || null;
+        $('saqla').disabled = true;
+        const { error } = await db.from('buyurtmalar').insert({
+          sana: $('fSana').value, vaqt: t('fVaqt'), mijoz_id: mijoz.id, mahsulot_id: Number($('fMahsulot').value),
+          miqdor, narx, manzil: t('fManzil'), telefon: t('fTelefon'), avto_raqami: t('fAvto'), izoh: t('fIzoh'),
+        });
+        $('saqla').disabled = false;
+        if (error) { xato.textContent = jadvalYoq(error) ? 'Avval supabase/09_kengaytma.sql ni ishga tushiring.' : 'Saqlanmadi: ' + error.message; return; }
+        xato.textContent = '✅ Buyurtma saqlandi'; xato.classList.add('ok');
+        ['qidir', 'fVaqt', 'fMiqdor', 'fNarx', 'fManzil', 'fTelefon', 'fAvto', 'fIzoh'].forEach(id => $(id).value = '');
+        mijoz = null;
+        kunTanla($('fSana').value);
+      });
+      $('fSana').value = kunQosh(bugun(), 1);
+    }
+
+    kunTanla(new URLSearchParams(location.search).get('kun') || bugun());
+  </script>
+</body>
+</html>

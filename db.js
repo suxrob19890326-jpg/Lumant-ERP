@@ -18,6 +18,10 @@ export const SAHIFA_ROLLAR = {
   spravochnik: ['admin', 'rahbar', 'sotuvchi', 'kassir', 'omborchi'],
   xodimlar:    ['admin', 'rahbar'],
   tarix:       ['admin', 'rahbar'],
+  nakladnoy:   ['admin', 'rahbar', 'sotuvchi', 'kassir'],
+  buyurtma:    ['admin', 'rahbar', 'sotuvchi', 'omborchi'],
+  reyslar:     ['admin', 'rahbar'],
+  sozlamalar:  ['admin', 'rahbar'],
 };
 export const ROL_NOMI = {
   admin: 'Admin', rahbar: 'Rahbar', sotuvchi: 'Sotuvchi', kassir: 'Kassir', omborchi: 'Omborchi',
@@ -120,4 +124,31 @@ export function kunQosh(s, n) {
 }
 export function kunlarFarqi(a, b) {
   return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
+}
+
+// Mijoz hisobining valyutasi: 'UZS' (so'm) yoki 'USD'. 09-SQL'gacha hamma so'mda.
+export const valyuta = (m) => (m && m.valyuta === 'USD') ? 'USD' : 'UZS';
+export const belgi = (v) => v === 'USD' ? '$' : 'so\'m';
+export const KASSA_NOMI = { naqd: '💵 Naqd', karta: '💳 Karta', bank: '🏦 Bank', dollar: '💲 Dollar' };
+
+// Jadval bazada bormi (yangi SQL hali ishga tushirilmagan bo'lsa — yo'q)
+export const jadvalYoq = (e) => !!e && (e.code === 'PGRST205' || e.code === '42P01' ||
+  /schema cache|does not exist|Could not find the table/i.test(e.message || ''));
+
+// Matnni telefon orqali yuborish: Telegram, SMS va h.k. (telefonda — "Ulashish" oynasi)
+export async function ulash(matn) {
+  if (navigator.share) {
+    try { await navigator.share({ text: matn }); return true; } catch (e) { if (e.name === 'AbortError') return false; }
+  }
+  window.open('https://t.me/share/url?url=%20&text=' + encodeURIComponent(matn), '_blank');
+  return true;
+}
+
+// Korxona ma'lumotlari (nakladnoy, dalolatnoma uchun). 09-SQL'gacha — standart.
+let sozKesh;
+export async function korxona() {
+  if (sozKesh) return sozKesh;
+  const { data } = await db.from('sozlamalar').select('*').eq('id', 1).maybeSingle();
+  sozKesh = data || { korxona_nomi: 'Lumant Beton', manzil: 'Kogon tumani' };
+  return sozKesh;
 }

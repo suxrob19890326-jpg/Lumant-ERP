@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!-- Yuk xati (nakladnoy): A4 varaqda 2 nusxa — korxonaga va mijozga. ?id=12 yoki ?ids=12,13 -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nakladnoy · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik ekranda">
+    <a href="javascript:history.back()" class="orqaga">‹ Orqaga</a>
+    <h1>Nakladnoy</h1>
+  </header>
+
+  <section class="panel ekranda">
+    <label class="belgi"><input type="checkbox" id="qarzKorsat" checked> Mijozning umumiy qarzini ko'rsatish</label>
+    <label class="belgi"><input type="checkbox" id="narxKorsat" checked> Narx va summani ko'rsatish</label>
+    <button type="button" id="chop">🖨 Chop etish / PDF</button>
+    <button type="button" class="tugma-oddiy" id="ulash">📲 Mijozga yuborish (Telegram)</button>
+    <p id="holat" class="xato">Yuklanmoqda...</p>
+  </section>
+
+  <div id="varaq" class="nakl-varaq"></div>
+
+  <script type="module">
+    import { db, loginShart, pul, sana, toza, korxona, valyuta, belgi, ulash } from './db.js';
+    import { sozBilan } from './sozbilan.js';
+
+    await loginShart('nakladnoy');
+    const $ = (id) => document.getElementById(id);
+    const url = new URLSearchParams(location.search);
+    const idlar = (url.get('ids') || url.get('id') || '').split(',').map(Number).filter(Boolean);
+    if (!idlar.length) { $('holat').textContent = 'Yozuv tanlanmagan'; throw new Error('id yo\'q'); }
+
+    const [{ data: yoz, error }, soz] = await Promise.all([
+      db.from('yozuvlar').select('id, sana, turi, mijoz_id, miqdor, olchov, narx, summa, avto_raqami, izoh, mahsulotlar(nomi, olchov)')
+        .in('id', idlar).order('id'),
+      korxona(),
+    ]);
+    if (error || !yoz?.length) { $('holat').textContent = error ? 'Xato: ' + error.message : 'Yozuv topilmadi'; throw error; }
+    if (new Set(yoz.map(y => y.mijoz_id)).size > 1) { $('holat').textContent = 'Bir nakladnoyda faqat bitta mijoz bo\'ladi'; throw new Error(); }
+
+    const { data: mj } = await db.from('mijoz_qoldiq').select('*').eq('id', yoz[0].mijoz_id).single();
+    const v = valyuta(mj), b = belgi(v);
+    const jami = yoz.reduce((s, y) => s + Math.abs(Number(y.summa || 0)), 0);
+    const avto = [...new Set(yoz.map(y => y.avto_raqami).filter(Boolean))].join(', ');
+    const raqam = yoz.map(y => y.id).join(', ');
+    $('holat').textContent = '';
+
+    function nusxa(kimga) {
+      const narx = $('narxKorsat').checked, qarz = $('qarzKorsat').checked;
+      return `<article class="nakl">
+        <div class="nakl-bosh">
+          <div><b>${toza(soz.korxona_nomi)}</b><br>${toza(soz.manzil || '')}${soz.telefon ? ' · ' + toza(soz.telefon) : ''}
+            ${soz.inn ? '<br>INN: ' + toza(soz.inn) : ''}${soz.rekvizit ? '<br>' + toza(soz.rekvizit) : ''}</div>
+          <div class="nakl-nusxa">${kimga}</div>
+        </div>
+        <h2>YUK XATI (NAKLADNOY) № ${toza(raqam)}</h2>
+        <p class="nakl-osti">${sana(yoz[0].sana)}</p>
+        <table class="nakl-malumot">
+          <tr><td>Qabul qiluvchi:</td><td><b>${toza(mj.nomi)}</b>${mj.telefon ? ' · ' + toza(mj.telefon) : ''}</td></tr>
+          ${avto ? `<tr><td>Avtomobil:</td><td><b>${toza(avto)}</b></td></tr>` : ''}
+        </table>
+        <table class="nakl-jadval">
+          <thead><tr><th>№</th><th>Mahsulot</th><th>O'lchov</th><th>Miqdor</th>${narx ? `<th>Narx</th><th>Summa, ${b}</th>` : ''}</tr></thead>
+          <tbody>${yoz.map((y, i) => `<tr><td>${i + 1}</td><td class="chap">${toza(y.mahsulotlar?.nomi || y.izoh || '')}</td>
+            <td>${toza(y.olchov || y.mahsulotlar?.olchov || '')}</td><td>${pul(y.miqdor)}</td>
+            ${narx ? `<td>${pul(y.narx)}</td><td>${pul(Math.abs(y.summa || 0))}</td>` : ''}</tr>`).join('')}
+          </tbody>
+          ${narx ? `<tfoot><tr><td colspan="5" class="chap">Jami:</td><td>${pul(jami)}</td></tr></tfoot>` : ''}
+        </table>
+        ${narx ? `<p class="nakl-soz">Jami: ${toza(sozBilan(jami, v))}</p>` : ''}
+        ${qarz ? `<p class="nakl-soz">Umumiy hisob holati: <b>${pul(Math.abs(mj.qoldiq))} ${b}</b> —
+          ${Number(mj.qoldiq) > 0 ? 'mijoz qarzi' : Number(mj.qoldiq) < 0 ? 'mijoz avansi' : 'hisob yopiq'}</p>` : ''}
+        ${soz.nakladnoy_izoh ? `<p class="nakl-izoh">${toza(soz.nakladnoy_izoh)}</p>` : ''}
+        <div class="nakl-imzo">
+          <div>Topshirdi: ____________</div><div>Haydovchi: ____________</div><div>Qabul qildi: ____________</div>
+        </div>
+      </article>`;
+    }
+    function chiz() {
+      $('varaq').innerHTML = nusxa('1-nusxa · korxonaga') + '<div class="nakl-kesish">✂ - - - - - - - - - - - - - - - - - - - - - - - -</div>' + nusxa('2-nusxa · mijozga');
+    }
+    ['qarzKorsat', 'narxKorsat'].forEach(id => $(id).addEventListener('change', chiz));
+    $('chop').addEventListener('click', () => window.print());
+    $('ulash').addEventListener('click', () => {
+      const narx = $('narxKorsat').checked;
+      const qator = yoz.map(y => `• ${y.mahsulotlar?.nomi || ''}: ${pul(y.miqdor)} ${y.olchov || ''}` +
+        (narx ? ` × ${pul(y.narx)} = ${pul(Math.abs(y.summa || 0))} ${b}` : '')).join('\n');
+      ulash(`${soz.korxona_nomi}\nNakladnoy № ${raqam} · ${sana(yoz[0].sana)}\n${mj.nomi}${avto ? '\nAvto: ' + avto : ''}\n\n${qator}` +
+        (narx ? `\n\nJami: ${pul(jami)} ${b}` : '') +
+        ($('qarzKorsat').checked ? `\nUmumiy hisob: ${pul(Math.abs(mj.qoldiq))} ${b} (${Number(mj.qoldiq) > 0 ? 'qarz' : Number(mj.qoldiq) < 0 ? 'avans' : 'yopiq'})` : ''));
+    });
+    chiz();
+    if (url.get('chop')) setTimeout(() => window.print(), 300);
+  </script>
+</body>
+</html>

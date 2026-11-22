@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<!-- Reyslar: qaysi mashina davr ichida necha marta, qancha yuk olib bordi; haydovchi haqi -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reyslar · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Miksjer reyslari</h1>
+  </header>
+
+  <section class="panel">
+    <div class="turlar tort" id="davrlar">
+      <button type="button" data-d="bugun">Bugun</button>
+      <button type="button" data-d="hafta">7 kun</button>
+      <button type="button" data-d="oy">Shu oy</button>
+      <button type="button" data-d="otganoy">O'tgan oy</button>
+    </div>
+    <div class="ikki">
+      <label>Dan <input id="dan" type="date"></label>
+      <label>Gacha <input id="gacha" type="date"></label>
+    </div>
+    <div class="ikki">
+      <label>1 reys uchun haq <input id="tReys" inputmode="decimal" placeholder="0"></label>
+      <label>1 m³ uchun haq <input id="tKub" inputmode="decimal" placeholder="0"></label>
+    </div>
+    <p id="holat" class="soni">Yuklanmoqda...</p>
+    <div class="jadval-oyna">
+      <table>
+        <thead><tr><th>Avto</th><th class="raqam">Reys</th><th class="raqam">m³</th><th class="raqam">Haq</th></tr></thead>
+        <tbody id="jadval"></tbody>
+      </table>
+    </div>
+    <p class="tushuntir">Mashina raqamini bosing — uning reyslari ko'rinadi. Reys = avto raqami yozilgan "Yuk berildi" yozuvi.</p>
+    <div id="tafsil"></div>
+    <button type="button" class="tugma-oddiy" id="csv">⬇️ Excel'ga yuklash</button>
+  </section>
+
+  <script type="module">
+    import { db, loginShart, pul, sana, toza, hammasi, csvYukla, bugun, kunQosh } from './db.js';
+
+    await loginShart('reyslar');
+    const $ = (id) => document.getElementById(id);
+    const son = (s) => { const n = Number(String(s).replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+    // "01 a 123 bc" → "01A123BC" — bir mashina har xil yozilsa ham bitta bo'lsin
+    const raqam = (s) => String(s || '').toUpperCase().replace(/[\s\-.]/g, '');
+    const KUB = /м3|m3|м³|m³|куб|kub/i;
+
+    // Tariflar shu telefonda eslab qolinadi
+    try { $('tReys').value = localStorage.reys_haq || ''; $('tKub').value = localStorage.kub_haq || ''; } catch {}
+
+    function davr(d) {
+      const b = bugun(), [y, m] = b.split('-').map(Number);
+      const bosh = (yy, mm) => `${yy}-${String(mm).padStart(2, '0')}-01`;
+      if (d === 'bugun') return [b, b];
+      if (d === 'hafta') return [kunQosh(b, -6), b];
+      if (d === 'oy') return [bosh(y, m), b];
+      const [oy, oy_] = m === 1 ? [y - 1, 12] : [y, m - 1];
+      return [bosh(oy, oy_), kunQosh(bosh(y, m), -1)];
+    }
+    function davrTanla(d) {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.toggle('tanlangan', b.dataset.d === d));
+      [$('dan').value, $('gacha').value] = davr(d);
+      yukla();
+    }
+    $('davrlar').addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) davrTanla(b.dataset.d); });
+    ['dan', 'gacha'].forEach(id => $(id).addEventListener('change', () => {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.remove('tanlangan')); yukla();
+    }));
+    ['tReys', 'tKub'].forEach(id => $(id).addEventListener('input', () => {
+      try { localStorage.reys_haq = $('tReys').value; localStorage.kub_haq = $('tKub').value; } catch {}
+      chiz();
+    }));
+
+    let reyslar = [], guruh = [], avtosiz = 0, soralgan = 0, ochiq = null;
+    async function yukla() {
+      const men = ++soralgan;
+      $('holat').textContent = 'Yuklanmoqda...';
+      const { data, error } = await hammasi(() => db.from('yozuvlar')
+        .select('id, sana, miqdor, olchov, avto_raqami, mijozlar(nomi), mahsulotlar(nomi, olchov)')
+        .eq('turi', 'yuk_berildi').gte('sana', $('dan').value).lte('sana', $('gacha').value).order('sana').order('id'));
+      if (men !== soralgan) return;
+      if (error) { $('holat').textContent = 'Xato: ' + error.message; return; }
+      avtosiz = data.filter(y => !raqam(y.avto_raqami)).length;
+      reyslar = data.filter(y => raqam(y.avto_raqami));
+      chiz();
+    }
+    function chiz() {
+      const tR = son($('tReys').value), tK = son($('tKub').value);
+      const g = new Map();
+      for (const y of reyslar) {
+        const k = raqam(y.avto_raqami);
+        const x = g.get(k) || { avto: y.avto_raqami.trim(), reys: 0, kub: 0, boshqa: 0, royxat: [] };
+        x.reys++;
+        if (KUB.test(y.olchov || y.mahsulotlar?.olchov || '')) x.kub += Number(y.miqdor || 0); else x.boshqa++;
+        x.royxat.push(y);
+        g.set(k, x);
+      }
+      guruh = [...g.values()].map(x => ({ ...x, haq: x.reys * tR + x.kub * tK })).sort((a, b) => b.reys - a.reys);
+      const jami = guruh.reduce((s, x) => ({ reys: s.reys + x.reys, kub: s.kub + x.kub, haq: s.haq + x.haq }), { reys: 0, kub: 0, haq: 0 });
+      $('holat').textContent = `${guruh.length} ta mashina · ${jami.reys} reys · ${pul(jami.kub)} m³` +
+        (avtosiz ? ` · ⚠️ ${avtosiz} ta yukda avto raqami yozilmagan` : '');
+      $('jadval').innerHTML = guruh.map((x, i) => `<tr class="bosiladi" data-i="${i}">
+          <td><b>${toza(x.avto)}</b></td><td class="raqam">${x.reys}</td><td class="raqam">${pul(Math.round(x.kub * 100) / 100)}</td>
+          <td class="raqam">${x.haq ? pul(x.haq) : '—'}</td></tr>`).join('') +
+        (guruh.length > 1 ? `<tr class="jami-qator"><td>Jami</td><td class="raqam">${jami.reys}</td><td class="raqam">${pul(Math.round(jami.kub * 100) / 100)}</td><td class="raqam">${jami.haq ? pul(jami.haq) : '—'}</td></tr>` : '') ||
+        '<tr><td colspan="4" class="soni">Bu davrda reys yo\'q</td></tr>';
+      tafsil();
+    }
+    function tafsil() {
+      const x = guruh.find(g => raqam(g.avto) === ochiq);
+      $('tafsil').innerHTML = x ? `<h2 class="kichik-sarlavha">🚛 ${toza(x.avto)} — ${x.reys} reys</h2>` + x.royxat.map(y => `
+        <div class="yozuv"><div class="yuqori"><span class="sana">${sana(y.sana)}</span><span class="nomi">${toza(y.mijozlar?.nomi || '')}</span>
+        <span class="summa">${pul(y.miqdor)} ${toza(y.olchov || y.mahsulotlar?.olchov || '')}</span></div>
+        <div class="pastki"><span>${toza(y.mahsulotlar?.nomi || '')}</span></div></div>`).join('') : '';
+    }
+    $('jadval').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-i]');
+      if (!tr) return;
+      const k = raqam(guruh[tr.dataset.i].avto);
+      ochiq = ochiq === k ? null : k;
+      tafsil();
+      if (ochiq) $('tafsil').scrollIntoView({ behavior: 'smooth' });
+    });
+    $('csv').addEventListener('click', () => {
+      csvYukla(`reyslar-${$('dan').value}_${$('gacha').value}`,
+        ['Avto', 'Sana', 'Mijoz', 'Mahsulot', 'Miqdor', 'O\'lchov'],
+        guruh.flatMap(x => x.royxat.map(y => [x.avto, sana(y.sana), y.mijozlar?.nomi || '', y.mahsulotlar?.nomi || '', Number(y.miqdor || 0), y.olchov || y.mahsulotlar?.olchov || ''])));
+    });
+
+    davrTanla('oy');
+  </script>
+</body>
+</html>

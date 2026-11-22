@@ -71,6 +71,29 @@
       </table>
     </div>
     <button type="button" class="tugma-oddiy" id="csvSotuv">⬇️ Excel'ga yuklash</button>
+
+    <h2 class="kichik-sarlavha">💸 Xarajatlar turlari (kassadan chiqim)</h2>
+    <div class="jadval-oyna">
+      <table>
+        <thead><tr><th>Turi</th><th class="raqam">Summa</th><th class="raqam">%</th></tr></thead>
+        <tbody id="xarajatlar"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 2b) Grafik: oylar bo'yicha -->
+  <section class="panel">
+    <h2 class="kichik-sarlavha">📈 Oxirgi 12 oy</h2>
+    <div class="grafik-belgi"><span class="b-sotuv">■ Sotuv</span> <span class="b-tolov">■ To'lov keldi</span></div>
+    <div id="grafik" class="grafik"><p class="soni">Yuklanmoqda...</p></div>
+  </section>
+
+  <!-- 2c) Qarzlarning muddati -->
+  <section class="panel">
+    <h2 class="kichik-sarlavha">⏰ Qarzlar qancha vaqtdan beri to'lanmagan</h2>
+    <p class="tushuntir">To'lovlar eng eski yukdan boshlab yopiladi; qolgan qarz necha kunlik ekani ko'rsatiladi.</p>
+    <div class="korsatkichlar tort" id="muddat"><p class="soni">Yuklanmoqda...</p></div>
+    <div id="eskiQarz"></div>
   </section>
 
   <!-- 3) Qarzdorlar -->
@@ -88,34 +111,39 @@
   </section>
 
   <script type="module">
-    import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh, kunlarFarqi } from './db.js';
+    import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh, kunlarFarqi, valyuta, belgi } from './db.js';
 
     const user = await loginShart('hisobot');
     const $ = (id) => document.getElementById(id);
 
     // ---------- 1) Qarzlar va kassa ----------
     let mijozlar = [];
-    const mj = await hammasi(() => db.from('mijoz_qoldiq').select('id, nomi, telefon, qoldiq, oxirgi_yozuv').order('id'));
+    const mj = await hammasi(() => db.from('mijoz_qoldiq').select('*').order('id'));   // '*' — valyuta (09) bo'lsa
     if (mj.error) { $('holat').textContent = 'Xato: ' + mj.error.message; throw mj.error; }
     mijozlar = mj.data.map(m => ({ ...m, qoldiq: Number(m.qoldiq) }));
+    const mijozMap = new Map(mijozlar.map(m => [m.id, m]));
+    const usdmi = (id) => valyuta(mijozMap.get(id)) === 'USD';
 
     const qarzdor = mijozlar.filter(m => m.qoldiq > 0).sort((a, b) => b.qoldiq - a.qoldiq);
     const biz = mijozlar.filter(m => m.qoldiq < 0).sort((a, b) => a.qoldiq - b.qoldiq);
-    const jami = (r) => r.reduce((s, m) => s + m.qoldiq, 0);
+    // Umumiy summalar so'mda; dollar hisoblar alohida
+    const jami = (r, v = 'UZS') => r.filter(m => valyuta(m) === v).reduce((s, m) => s + m.qoldiq, 0);
+    const dollar = (n) => n ? ` · + ${pul(Math.abs(n))} $` : '';
     $('k_debitor').textContent = pul(jami(qarzdor));
-    $('k_debitorSoni').textContent = qarzdor.length + ' ta mijoz';
+    $('k_debitorSoni').textContent = qarzdor.length + ' ta mijoz' + dollar(jami(qarzdor, 'USD'));
     $('k_kreditor').textContent = pul(-jami(biz));
     $('k_kreditor').classList.toggle('manfiy', biz.length > 0);
-    $('k_kreditorSoni').textContent = biz.length + ' ta';
+    $('k_kreditorSoni').textContent = biz.length + ' ta' + dollar(jami(biz, 'USD'));
 
     const kq = await db.from('kassa_qoldiq').select('kassa, qoldiq');
     if (kq.error) {
       $('k_kassa').textContent = '—';
       $('k_kassaTafsil').textContent = 'kassa sozlanmagan';
     } else {
-      const nom = { naqd: 'Naqd', karta: 'Karta', bank: 'Bank' };
-      $('k_kassa').textContent = pul(kq.data.reduce((s, r) => s + Number(r.qoldiq), 0));
-      $('k_kassaTafsil').textContent = kq.data.map(r => `${nom[r.kassa] || r.kassa}: ${pul(r.qoldiq)}`).join(' · ');
+      const nom = { naqd: 'Naqd', karta: 'Karta', bank: 'Bank', dollar: 'Dollar' };
+      $('k_kassa').textContent = pul(kq.data.filter(r => r.kassa !== 'dollar').reduce((s, r) => s + Number(r.qoldiq), 0));
+      $('k_kassaTafsil').textContent = kq.data.filter(r => r.kassa !== 'dollar' || Number(r.qoldiq))
+        .map(r => `${nom[r.kassa] || r.kassa}: ${pul(r.qoldiq)}${r.kassa === 'dollar' ? ' $' : ''}`).join(' · ');
     }
 
     // ---------- 3) Qarzdorlar ro'yxati ----------
@@ -126,7 +154,7 @@
       return `<a class="yozuv bosiladi qator-havola" href="sverka.html?mijoz=${encodeURIComponent(m.id)}">
         <div class="yuqori">
           <span class="nomi">${toza(m.nomi)}</span>
-          <span class="summa ${m.qoldiq < 0 ? 'kirim' : ''}">${pul(Math.abs(m.qoldiq))}</span>
+          <span class="summa ${m.qoldiq < 0 ? 'kirim' : ''}">${pul(Math.abs(m.qoldiq))}${valyuta(m) === 'USD' ? ' $' : ''}</span>
         </div>
         <div class="pastki">
           <span>${m.telefon ? '📞 ' + toza(m.telefon) : ''}</span>
@@ -148,8 +176,8 @@
 
     $('csvQarz').addEventListener('click', () => {
       csvYukla(`qarzlar-${bugun()}`,
-        ['Mijoz', 'Telefon', 'Qoldiq (so\'m)', 'Holat', 'Oxirgi yozuv'],
-        [...qarzdor, ...biz].map(m => [m.nomi, m.telefon || '', m.qoldiq,
+        ['Mijoz', 'Telefon', 'Qoldiq', 'Valyuta', 'Holat', 'Oxirgi yozuv'],
+        [...qarzdor, ...biz].map(m => [m.nomi, m.telefon || '', m.qoldiq, belgi(valyuta(m)),
           m.qoldiq > 0 ? 'Mijoz qarz' : 'Biz qarz / avans', sana(m.oxirgi_yozuv)]));
     });
 
@@ -186,16 +214,17 @@
       const men = ++soralgan;
       ['d_sotuv', 'd_tolov', 'd_xarid', 'd_pulber'].forEach(id => $(id).textContent = '…');
       const { data, error } = await hammasi(() => db.from('yozuvlar')
-        .select('id, turi, miqdor, olchov, summa, mahsulot_id, mahsulotlar(nomi, olchov)')
+        .select('id, mijoz_id, turi, miqdor, olchov, summa, mahsulot_id, mahsulotlar(nomi, olchov)')
         .gte('sana', dan).lte('sana', gacha).order('id'));
       if (men !== soralgan) return;
       if (error) { $('holat').textContent = 'Xato: ' + error.message; return; }
 
       const yig = (turi) => {
         const r = data.filter(y => y.turi === turi);
-        return [r.reduce((s, y) => s + Math.abs(Number(y.summa || 0)), 0), r.length];
+        const sum = (v) => r.filter(y => usdmi(y.mijoz_id) === v).reduce((s, y) => s + Math.abs(Number(y.summa || 0)), 0);
+        return [sum(false), r.length, sum(true)];
       };
-      const qoy = (id, [s, n]) => { $(id).textContent = pul(s); $(id + 'Soni').textContent = n + ' ta yozuv'; };
+      const qoy = (id, [s, n, d]) => { $(id).textContent = pul(s); $(id + 'Soni').textContent = n + ' ta yozuv' + dollar(d); };
       qoy('d_sotuv', yig('yuk_berildi'));
       qoy('d_tolov', yig('tolov_keldi'));
       qoy('d_xarid', yig('mahsulot_olindi'));
@@ -206,7 +235,7 @@
         const key = y.mahsulot_id ?? 0;
         const g = guruh.get(key) || { nomi: y.mahsulotlar?.nomi || '(mahsulotsiz)', olchov: y.mahsulotlar?.olchov || y.olchov || '', miqdor: 0, summa: 0 };
         g.miqdor += Number(y.miqdor || 0);
-        g.summa += Number(y.summa || 0);
+        if (!usdmi(y.mijoz_id)) g.summa += Number(y.summa || 0);   // summa — so'mda
         guruh.set(key, g);
       }
       sotuvJadval = [...guruh.values()].sort((a, b) => b.summa - a.summa);
@@ -215,6 +244,19 @@
           <td class="raqam">${pul(g.miqdor)} ${toza(g.olchov)}</td>
           <td class="raqam">${pul(g.summa)}</td></tr>`).join('') ||
         '<tr><td colspan="3" class="soni">Bu davrda sotuv yo\'q</td></tr>';
+
+      // Xarajatlar turlari: kassadan chiqim (o'tkazma va dollar kassa hisobga kirmaydi)
+      const kx = await hammasi(() => db.from('kassa_yozuvlar').select('id, kassa, summa, toifa')
+        .eq('yonalish', 'chiqim').gte('sana', dan).lte('sana', gacha).order('id'));
+      if (men !== soralgan) return;
+      if (kx.error) { $('xarajatlar').innerHTML = '<tr><td colspan="3" class="soni">Kassa sozlanmagan</td></tr>'; return; }
+      const xg = new Map();
+      kx.data.filter(k => k.kassa !== 'dollar' && k.toifa !== 'O\'tkazma')
+        .forEach(k => { const t = k.toifa || 'Boshqa'; xg.set(t, (xg.get(t) || 0) + Number(k.summa)); });
+      const xj = [...xg.values()].reduce((a, b) => a + b, 0);
+      $('xarajatlar').innerHTML = [...xg].sort((a, b) => b[1] - a[1]).map(([t, v]) =>
+        `<tr><td>${toza(t)}</td><td class="raqam">${pul(v)}</td><td class="raqam">${Math.round(v / xj * 100)}%</td></tr>`).join('') +
+        (xg.size ? `<tr class="jami-qator"><td>Jami</td><td class="raqam">${pul(xj)}</td><td></td></tr>` : '<tr><td colspan="3" class="soni">Bu davrda chiqim yo\'q</td></tr>');
     }
     $('csvSotuv').addEventListener('click', () => {
       csvYukla(`sotuv-${$('dan').value}_${$('gacha').value}`,
@@ -223,6 +265,77 @@
     });
 
     davrTanla('oy');
+
+    // ---------- Grafik va qarz muddati: barcha yozuvlar bir marta yuklanadi ----------
+    const OY = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+    const qisqa = (n) => n >= 1e9 ? (n / 1e9).toFixed(1).replace('.0', '') + ' mlrd' : n >= 1e6 ? Math.round(n / 1e6) + ' mln' : n >= 1e3 ? Math.round(n / 1e3) + ' ming' : String(Math.round(n));
+    const hamma = await hammasi(() => db.from('yozuvlar').select('id, mijoz_id, sana, turi, summa').order('id'));
+    if (hamma.error) { $('grafik').innerHTML = `<p class="xato">Xato: ${toza(hamma.error.message)}</p>`; throw hamma.error; }
+    const yozuvlar = hamma.data.filter(y => !usdmi(y.mijoz_id));   // so'm hisoblar
+
+    // 1) 12 oylik grafik (SVG, kutubxonasiz)
+    const oylar = [];
+    { const [y, m] = bugun().split('-').map(Number);
+      for (let i = 11; i >= 0; i--) { const d = new Date(y, m - 1 - i, 1); oylar.push({ k: d.toLocaleDateString('sv-SE').slice(0, 7), nom: OY[d.getMonth()], s: 0, t: 0 }); } }
+    const oyMap = new Map(oylar.map(o => [o.k, o]));
+    for (const y of yozuvlar) {
+      const o = oyMap.get(String(y.sana).slice(0, 7));
+      if (!o) continue;
+      if (y.turi === 'yuk_berildi') o.s += Math.abs(Number(y.summa || 0));
+      if (y.turi === 'tolov_keldi') o.t += Math.abs(Number(y.summa || 0));
+    }
+    const eng = Math.max(1, ...oylar.flatMap(o => [o.s, o.t]));
+    const W = 360, H = 180, P = 22, bw = (W - 8) / 12;
+    $('grafik').innerHTML = `<svg viewBox="0 0 ${W} ${H + P}" role="img" aria-label="Oylar bo'yicha sotuv va to'lovlar">
+      ${[0.5, 1].map(f => `<line x1="0" x2="${W}" y1="${H - H * f * 0.9}" y2="${H - H * f * 0.9}" class="g-chiziq"/>
+        <text x="2" y="${H - H * f * 0.9 - 3}" class="g-matn">${qisqa(eng * f)}</text>`).join('')}
+      ${oylar.map((o, i) => { const x = 4 + i * bw, hs = o.s / eng * H * 0.9, ht = o.t / eng * H * 0.9;
+        return `<g><title>${o.nom} ${o.k.slice(0, 4)}: sotuv ${pul(o.s)}, to'lov ${pul(o.t)}</title>
+          <rect x="${x + 2}" y="${H - hs}" width="${bw / 2 - 2}" height="${hs}" class="g-sotuv"/>
+          <rect x="${x + bw / 2}" y="${H - ht}" width="${bw / 2 - 2}" height="${ht}" class="g-tolov"/>
+          <text x="${x + bw / 2}" y="${H + 14}" text-anchor="middle" class="g-matn">${o.nom}</text></g>`; }).join('')}
+    </svg>
+    <div class="jadval-oyna"><table><thead><tr><th>Oy</th><th class="raqam">Sotuv</th><th class="raqam">To'lov</th></tr></thead><tbody>
+      ${[...oylar].reverse().filter(o => o.s || o.t).map(o => `<tr><td>${o.nom} ${o.k.slice(0, 4)}</td><td class="raqam">${pul(o.s)}</td><td class="raqam">${pul(o.t)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+
+    // 2) Qarz muddati (FIFO): har mijozda to'lovlar eng eski qarzlarni yopadi
+    const BOSQ = [[0, 30, '0–30 kun'], [31, 60, '31–60 kun'], [61, 90, '61–90 kun'], [91, Infinity, '90+ kun']];
+    const bosq = BOSQ.map(() => 0);
+    const eskilar = [];
+    const guruh = new Map();
+    for (const y of yozuvlar) { const r = guruh.get(y.mijoz_id) || []; r.push(y); guruh.set(y.mijoz_id, r); }
+    const b = bugun();
+    for (const [id, r] of guruh) {
+      r.sort((a, c) => a.sana < c.sana ? -1 : a.sana > c.sana ? 1 : a.id - c.id);
+      const qarzlar = [];   // [sana, qolgan]
+      let ortiq = 0;        // ortiqcha to'lov (avans)
+      for (const y of r) {
+        let s = Number(y.summa || 0);
+        if (s > 0) {
+          const yop = Math.min(s, ortiq); ortiq -= yop; s -= yop;
+          if (s > 0) qarzlar.push([y.sana, s]);
+        } else if (s < 0) {
+          let t = -s;
+          while (t > 0 && qarzlar.length) { const q = qarzlar[0]; const yop = Math.min(q[1], t); q[1] -= yop; t -= yop; if (q[1] <= 0.005) qarzlar.shift(); }
+          ortiq += t;
+        }
+      }
+      let mEski = 0;
+      for (const [s, q] of qarzlar) {
+        const kun = kunlarFarqi(s, b);
+        const i = BOSQ.findIndex(([a, c]) => kun >= a && kun <= c);
+        bosq[i < 0 ? 0 : i] += q;
+        if (kun > 90) mEski += q;
+      }
+      if (mEski > 0.5) eskilar.push({ m: mijozMap.get(id), q: mEski, eng: qarzlar[0]?.[0] });
+    }
+    $('muddat').innerHTML = BOSQ.map(([, , nom], i) => `<div class="korsatkich ${i === 3 && bosq[i] ? 'xavf' : ''}"><span>${nom}</span><b>${pul(Math.round(bosq[i]))}</b></div>`).join('');
+    eskilar.sort((a, c) => c.q - a.q);
+    $('eskiQarz').innerHTML = eskilar.length ? `<h2 class="kichik-sarlavha">90 kundan eski qarzi bor mijozlar (${eskilar.length})</h2>` +
+      eskilar.slice(0, 20).map(x => `<a class="yozuv bosiladi qator-havola" href="sverka.html?mijoz=${x.m?.id}">
+        <div class="yuqori"><span class="nomi">${toza(x.m?.nomi || '')}</span><span class="summa manfiy">${pul(Math.round(x.q))}</span></div>
+        <div class="pastki"><span>${x.m?.telefon ? '📞 ' + toza(x.m.telefon) : ''}</span><span>eng eski: ${sana(x.eng)} (${kunlarFarqi(x.eng, b)} kun)</span></div></a>`).join('') : '';
   </script>
 </body>
 </html>

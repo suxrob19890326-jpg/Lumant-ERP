@@ -252,3 +252,55 @@ fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
 .juft-tomon button { margin: 4px 0 0; padding: 8px; font-size: 14px; }
 .juft > [data-harxil] { grid-column: 1 / -1; margin: 0; padding: 8px; font-size: 14px; }
 .birlash { border-top: 1px dashed #d9cfc6; padding-top: 10px; margin-top: 6px; }
+
+/* ---------- Nakladnoy (ekranda — qog'oz ko'rinishi, chop etishda — A4 da 2 nusxa) ---------- */
+.nakl-varaq { max-width: 760px; margin: 0 auto 24px; padding: 0 12px; }
+.nakl { background: white; color: #000; padding: 18px; border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,.12); font-size: 13px; }
+.nakl-bosh { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; line-height: 1.4; }
+.nakl-nusxa { color: #666; white-space: nowrap; font-size: 11px; }
+.nakl h2 { text-align: center; font-size: 16px; margin: 10px 0 0; color: #000; }
+.nakl-osti { text-align: center; margin: 2px 0 8px; }
+.nakl-malumot td { border: none; padding: 2px 8px 2px 0; white-space: normal; }
+.nakl-jadval { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+.nakl-jadval th, .nakl-jadval td { border: 1px solid #000; padding: 4px; text-align: right; white-space: nowrap; background: none; color: #000; position: static; }
+.nakl-jadval th { background: #eee; -webkit-print-color-adjust: exact; print-color-adjust: exact; text-align: center; }
+.nakl-jadval .chap { text-align: left; white-space: normal; }
+.nakl-jadval tfoot td { font-weight: bold; }
+.nakl-soz { margin: 8px 0 0; }
+.nakl-izoh { margin: 6px 0 0; font-size: 11px; color: #444; }
+.nakl-imzo { display: flex; justify-content: space-between; gap: 8px; margin-top: 22px; font-size: 12px; flex-wrap: wrap; }
+.nakl-kesish { text-align: center; color: #999; margin: 14px 0; font-size: 12px; overflow: hidden; white-space: nowrap; }
+@media print {
+  .ekranda { display: none !important; }
+  .nakl-varaq { max-width: none; padding: 0; margin: 0; }
+  .nakl { box-shadow: none; border-radius: 0; padding: 6mm 4mm; page-break-inside: avoid; }
+  .nakl-kesish { margin: 4mm 0; }
+}
+
+/* ---------- Buyurtmalar ---------- */
+.kelgusi { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.kelgusi button { margin: 0; width: auto; padding: 6px 10px; font-size: 13px; background: white; color: #5A2E0E; border: 1px solid #d9cfc6; }
+.kelgusi button.tanlangan { background: #E8731A; color: white; border-color: #E8731A; }
+.buyurtma.bajarildi, .buyurtma.bekor { opacity: .6; }
+.buyurtma.bekor .nomi { text-decoration: line-through; }
+.buyurtma-tugma { margin-top: 8px; }
+.buyurtma-tugma button, .buyurtma-tugma a { margin: 0; padding: 10px; font-size: 14px; }
+tr.yetmaydi td { background: #fdecea; }
+.jami-qator td { font-weight: 700; border-top: 2px solid #d9cfc6; }
+
+/* ---------- Grafik ---------- */
+.grafik svg { width: 100%; height: auto; display: block; margin-bottom: 8px; }
+.g-sotuv { fill: #E8731A; }
+.g-tolov { fill: #1e8449; }
+.g-chiziq { stroke: #eee3da; stroke-width: 1; }
+.g-matn { font-size: 10px; fill: #8a6a50; }
+.grafik-belgi { font-size: 13px; margin: -2px 0 6px; }
+.b-sotuv { color: #E8731A; } .b-tolov { color: #1e8449; }
+.korsatkichlar.tort { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 480px) { .korsatkichlar.tort { grid-template-columns: repeat(2, 1fr); } }
+.korsatkich.xavf b { color: #c0392b; }
+.maxsus-narx { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #d9cfc6; }
+.maxsus-narx .sarf { grid-template-columns: 1fr 100px 48px; }
+.ochir-kichik { margin: 0; width: auto; padding: 4px 10px; background: #f6f2ee; color: #8a6a50; font-size: 13px; }
+.kassa-qoldiq.tort { grid-template-columns: repeat(2, 1fr); }
+.zaxira-eslat { display: block; text-decoration: none; text-align: center; font-weight: 600; }

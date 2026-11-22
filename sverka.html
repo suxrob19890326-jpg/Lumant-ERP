@@ -35,7 +35,10 @@
         <b id="qoldiq"></b>
         <small id="izohQoldiq"></small>
       </div>
-      <a id="yozuvga" class="tugma-ikkinchi" href="yozuv.html">➕ Yozuv qo'shish</a>
+      <div class="ikki">
+        <a id="yozuvga" class="tugma-ikkinchi" href="yozuv.html">➕ Yozuv qo'shish</a>
+        <button type="button" id="eslatma" class="tugma-oddiy">📲 Eslatma yuborish</button>
+      </div>
 
       <!-- Davr -->
       <div class="turlar tort davr-tanla" id="davrlar">
@@ -84,6 +87,7 @@
         <button type="button" id="tQulfla" class="tugma-oddiy">🔒 Qulflash</button>
       </div>
     </fieldset>
+    <a id="tNakl" class="tugma-ikkinchi" href="#" hidden>🧾 Nakladnoy chop etish</a>
     <button type="button" id="tYop" class="tugma-oddiy">Yopish</button>
     <p id="tXato" class="xato"></p>
   </form>
@@ -92,7 +96,7 @@
   <article id="akt" class="akt"></article>
 
   <script type="module">
-    import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh } from './db.js';
+    import { db, loginShart, pul, sana, toza, mos, saralash, hammasi, csvYukla, bugun, kunQosh, valyuta, belgi, korxona, ulash } from './db.js';
 
     const user = await loginShart('sverka');
     const $ = (id) => document.getElementById(id);
@@ -113,7 +117,7 @@
 
     // 1) Mijozlar ro'yxati (1000 tadan ko'p bo'lsa ham hammasi)
     const holat = $('holat');
-    const mj = await hammasi(() => db.from('mijoz_qoldiq').select('id, nomi, qoldiq').order('nomi').order('id'));
+    const mj = await hammasi(() => db.from('mijoz_qoldiq').select('*').order('nomi').order('id'));
     if (mj.error) { holat.textContent = 'Xato: ' + mj.error.message; throw mj.error; }
     const mijozlar = mj.data;
     holat.textContent = mijozlar.length + ' ta mijoz';
@@ -162,7 +166,7 @@
 
       const jami = yozuvlar.reduce((s, y) => s + Number(y.summa || 0), 0);
       $('mijozNomi').textContent = mijoz.nomi;
-      $('qoldiq').textContent = pul(jami) + ' so\'m';
+      $('qoldiq').textContent = pul(jami) + ' ' + belgi(valyuta(mijoz));
       $('izohQoldiq').textContent =
         jami > 0 ? 'Mijoz bizdan qarz' : jami < 0 ? 'Biz mijozdan qarzmiz (avans)' : 'Hisob yopiq';
       $('yozuvga').href = 'yozuv.html?mijoz=' + encodeURIComponent(mijoz.id);
@@ -173,6 +177,20 @@
 
     // 4) Davr
     let davrNomi = null;
+
+    // Qarz eslatmasi: Telegram / SMS orqali mijozga
+    const soz = await korxona();
+    $('eslatma').addEventListener('click', () => {
+      if (!tanlangan) return;
+      const q = yozuvlar.reduce((s, y) => s + Number(y.summa || 0), 0), b = belgi(valyuta(tanlangan));
+      const oxirgi = [...yozuvlar].reverse().find(y => y.turi === 'tolov_keldi');
+      ulash(q > 0
+        ? `Assalomu alaykum, ${tanlangan.nomi}!\n${soz.korxona_nomi} oldidagi qarzingiz ${sana(bugun())} holatiga: ${pul(q)} ${b}.` +
+          (oxirgi ? `\nOxirgi to'lovingiz: ${sana(oxirgi.sana)}, ${pul(Math.abs(oxirgi.summa))} ${b}.` : '') +
+          `\nIltimos, to'lovni amalga oshiring.${soz.telefon ? '\nTel: ' + soz.telefon : ''}\nRahmat!`
+        : `Assalomu alaykum, ${tanlangan.nomi}!\n${soz.korxona_nomi} bilan hisob-kitob ${sana(bugun())} holatiga: ` +
+          (q < 0 ? `sizning avansingiz ${pul(-q)} ${b}.` : 'qarzdorlik yo\'q.') + '\nRahmat!');
+    });
     function davr(d) {
       const b = bugun();
       const [y, m] = b.split('-').map(Number);
@@ -256,13 +274,14 @@
       const davrMatn = h.dan || h.gacha
         ? `${h.dan ? sana(h.dan) : 'boshidan'} — ${sana(h.gacha || bugun())}`
         : `boshidan — ${sana(bugun())}`;
-      const qolMatn = (x) => x > 0 ? `${pul(x)} so'm — mijoz Lumant Beton'dan qarzdor`
-        : x < 0 ? `${pul(-x)} so'm — Lumant Beton mijozdan qarzdor (avans)` : 'qarzdorlik yo\'q';
+      const b = belgi(valyuta(tanlangan)), kn = soz.korxona_nomi;
+      const qolMatn = (x) => x > 0 ? `${pul(x)} ${b} — mijoz ${kn}'dan qarzdor`
+        : x < 0 ? `${pul(-x)} ${b} — ${kn} mijozdan qarzdor (avans)` : 'qarzdorlik yo\'q';
       $('akt').innerHTML = `
         <h2>SOLISHTIRMA DALOLATNOMA</h2>
         <p class="akt-osti">(Акт сверки взаиморасчётов)</p>
         <table class="akt-bosh">
-          <tr><td>Tomonlar:</td><td><b>Lumant Beton</b> (Kogon tumani) va <b>${toza(tanlangan.nomi)}</b></td></tr>
+          <tr><td>Tomonlar:</td><td><b>${toza(soz.korxona_nomi)}</b>${soz.manzil ? ' (' + toza(soz.manzil) + ')' : ''} va <b>${toza(tanlangan.nomi)}</b></td></tr>
           <tr><td>Davr:</td><td>${davrMatn}</td></tr>
           <tr><td>Tuzilgan sana:</td><td>${sana(bugun())}</td></tr>
         </table>
@@ -285,7 +304,7 @@
         </table>
         <p class="akt-xulosa"><b>Xulosa:</b> ${sana(h.gacha || bugun())} holatiga ${qolMatn(h.oxir)}.</p>
         <div class="akt-imzo">
-          <div><b>Lumant Beton</b><br><br>__________________ / __________________<br><small>imzo / F.I.Sh.</small></div>
+          <div><b>${toza(soz.korxona_nomi)}</b><br><br>__________________ / __________________<br><small>imzo / F.I.Sh.</small></div>
           <div><b>${toza(tanlangan.nomi)}</b><br><br>__________________ / __________________<br><small>imzo / F.I.Sh.</small></div>
         </div>`;
       window.print();
@@ -333,6 +352,8 @@
       $('tSumma').value = y.summa == null ? '' : tuz ? y.summa : Math.abs(y.summa);
       $('tBelgi').textContent = tuz ? '(+ qarz oshadi, − kamayadi)' : Number(y.summa) < 0 ? '(qarzni kamaytiradi)' : '(qarzni oshiradi)';
       $('tAvto').value = y.avto_raqami || '';
+      $('tNakl').hidden = y.turi !== 'yuk_berildi';
+      $('tNakl').href = 'nakladnoy.html?id=' + y.id;
       $('tIzoh').value = y.izoh || '';
       $('tXato').textContent = '';
       $('tXato').classList.remove('ok');

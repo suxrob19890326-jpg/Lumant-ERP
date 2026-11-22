@@ -34,6 +34,9 @@
           <option value="mahsulotlar">Mahsulotlar</option>
           <option value="retseptlar">Retseptlar</option>
           <option value="xodimlar">Xodimlar</option>
+          <option value="buyurtmalar">Buyurtmalar</option>
+          <option value="mijoz_narx">Maxsus narxlar</option>
+          <option value="sozlamalar">Sozlamalar</option>
         </select>
       </label>
       <label>Amal
@@ -60,6 +63,7 @@
     const JADVAL = {
       yozuvlar: 'Qarz yozuvi', kassa_yozuvlar: 'Kassa', ombor_harakat: 'Ombor', ishlab_chiqarish: 'Ishlab chiqarish',
       mijozlar: 'Mijoz', mahsulotlar: 'Mahsulot', retseptlar: 'Retsept', xodimlar: 'Xodim',
+      buyurtmalar: 'Buyurtma', mijoz_narx: 'Maxsus narx', sozlamalar: 'Sozlama',
     };
     const AMAL = { qoshildi: '➕ qo\'shildi', ozgardi: '✏️ o\'zgartirildi', ochirildi: '🗑 o\'chirildi' };
     const MAYDON = {
@@ -67,8 +71,10 @@
       miqdor: 'Miqdor', narx: 'Narx', summa: 'Summa', avto_raqami: 'Avto', izoh: 'Izoh', qulf: 'Qulf',
       kassa: 'Kassa', yonalish: 'Yo\'nalish', toifa: 'Toifa', sabab: 'Sabab', nomi: 'Nomi', telefon: 'Telefon',
       olchov: 'O\'lchov', oxirgi_narx: 'Narx', turkum: 'Turkum', rol: 'Rol', faol: 'Faol', ism: 'Ism', email: 'Email',
+      valyuta: 'Valyuta', vaqt: 'Vaqt', manzil: 'Manzil', holat: 'Holat', korxona_nomi: 'Korxona', inn: 'INN',
+      rekvizit: 'Rekvizit', nakladnoy_izoh: 'Nakladnoy matni',
     };
-    const YASHIRIN = new Set(['id', 'kiritgan', 'kiritilgan_vaqt', 'created_at', 'user_id', 'eski_kiritgan', 'yozuv_id', 'ishlab_id']);
+    const YASHIRIN = new Set(['id', 'kiritgan', 'kiritilgan_vaqt', 'created_at', 'updated_at', 'user_id', 'eski_kiritgan', 'yozuv_id', 'ishlab_id']);
     const SONLI = new Set(['miqdor', 'narx', 'summa', 'oxirgi_narx']);
 
     // Raqamlar o'rniga nomlar

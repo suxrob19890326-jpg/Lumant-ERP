@@ -35,17 +35,21 @@
 
   <!-- 2) MENYU: kirgandan keyin ko'rinadi -->
   <main id="menyu" hidden>
+    <a id="zaxiraEslat" class="panel ogoh zaxira-eslat" href="sozlamalar.html" hidden></a>
     <p id="rolsiz" class="panel rolsiz" hidden>Sizga hali rol berilmagan. Admin'ga murojaat qiling —
       u "Xodimlar" bo'limida sizga rol beradi.</p>
     <a class="card" data-s="yozuv" href="yozuv.html">✍️ Yangi yozuv</a>
     <a class="card" data-s="sverka" href="sverka.html">💰 Qarzlar va sverka</a>
+    <a class="card" data-s="buyurtma" href="buyurtma.html">📋 Buyurtmalar</a>
     <a class="card" data-s="kassa" href="kassa.html">💵 Kassa</a>
     <a class="card" data-s="ombor" href="ombor.html">📦 Ombor</a>
     <a class="card" data-s="ishlab" href="ishlab.html">🏭 Ishlab chiqarish</a>
     <a class="card" data-s="hisobot" href="hisobot.html">📊 Hisobot</a>
+    <a class="card" data-s="reyslar" href="reyslar.html">🚛 Miksjer reyslari</a>
     <a class="card" data-s="spravochnik" href="spravochnik.html">📚 Spravochniklar</a>
     <a class="card" data-s="xodimlar" href="xodimlar.html">👤 Xodimlar va rollar</a>
     <a class="card" data-s="tarix" href="tarix.html">🕓 O'zgarishlar tarixi</a>
+    <a class="card" data-s="sozlamalar" href="sozlamalar.html">⚙️ Sozlamalar va zaxira</a>
     <p class="kim">Siz: <b id="kim"></b> <span id="rolNomi"></span> · <a href="#" id="chiqish">Chiqish</a></p>
   </main>
 
@@ -69,6 +73,16 @@
       document.querySelectorAll('#menyu .card[data-s]').forEach(c => { c.hidden = !ruxsat(rol, c.dataset.s); });
       document.getElementById('rolsiz').hidden = !!rol;
       document.getElementById('rolNomi').textContent = rol ? `(${ROL_NOMI[rol] || rol})` : '';
+      // Zaxira eslatmasi: 7 kundan beri olinmagan bo'lsa (shu telefonda)
+      if (ruxsat(rol, 'sozlamalar')) {
+        let kun = null;
+        try { kun = localStorage.zaxira_kun; } catch {}
+        const farq = kun ? Math.round((Date.now() - new Date(kun + 'T12:00:00')) / 86400000) : null;
+        const el = document.getElementById('zaxiraEslat');
+        el.hidden = farq !== null && farq < 7;
+        el.textContent = farq === null ? '💾 Zaxira nusxa hali olinmagan — bosib yuklab oling'
+          : `💾 Oxirgi zaxira nusxa ${farq} kun oldin olingan — yangisini yuklab oling`;
+      }
     }
 
     login.addEventListener('submit', async (e) => {
