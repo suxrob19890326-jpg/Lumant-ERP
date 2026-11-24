@@ -1,9 +1,9 @@
 // Internetsiz ishlash: sayt fayllari telefonda saqlanadi.
 // Avval internetdan (yangi versiya), 4 soniyada javob bo'lmasa yoki internet yo'q bo'lsa — saqlangandan.
 // Baza so'rovlari (supabase.co) bu yerdan o'tmaydi.
-const KESH = 'lumant-v1';
+const KESH = 'lumant-v2';
 const FAYLLAR = [
-  './', 'index.html', 'yozuv.html', 'sverka.html', 'kassa.html', 'ombor.html', 'ishlab.html', 'hisobot.html',
+  './', 'index.html', 'yozuv.html', 'sverka.html', 'jadval.html', 'kassa.html', 'ombor.html', 'ishlab.html', 'hisobot.html',
   'spravochnik.html', 'xodimlar.html', 'tarix.html', 'buyurtma.html', 'reyslar.html', 'sozlamalar.html',
   'nakladnoy.html', 'foyda.html', 'ishhaqi.html', 'kabinet.html',
   'style.css', 'db.js', 'config.js', 'qidiruv.js', 'sozbilan.js', 'zaxira.js', 'navbat.js',

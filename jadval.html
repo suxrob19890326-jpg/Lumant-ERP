@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<!-- Jadval: yozuvlar Excel / Google Sheets kabi kataklarda.
+     Katakni bosib o'zgartirasiz → boshqa katakka o'tsangiz yoki Enter bossangiz o'zi saqlanadi.
+     Eng yuqoridagi yashil qator — yangi yozuv qo'shish uchun. -->
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jadval · Lumant ERP</title>
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8731A">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/supabase-2.119.2.js" defer></script>
+  <link rel="modulepreload" href="db.js">
+  <link rel="modulepreload" href="config.js">
+  <link rel="modulepreload" href="qidiruv.js">
+</head>
+<body>
+  <header class="kichik">
+    <a href="index.html" class="orqaga">‹ Menyu</a>
+    <h1>Jadval</h1>
+  </header>
+
+  <section class="panel keng">
+    <div class="turlar jadval-davr" id="davrlar">
+      <button type="button" data-d="bugun">Bugun</button>
+      <button type="button" data-d="hafta">7 kun</button>
+      <button type="button" data-d="oy">Shu oy</button>
+      <button type="button" data-d="otganoy">O'tgan oy</button>
+      <button type="button" data-d="hammasi">Hammasi</button>
+    </div>
+    <div class="jadval-filtr">
+      <label>Dan <input id="dan" type="date"></label>
+      <label>Gacha <input id="gacha" type="date"></label>
+      <label>Turi
+        <select id="turFiltr">
+          <option value="">Hammasi</option>
+          <option value="yuk_berildi">🚚 Yuk berildi</option>
+          <option value="tolov_keldi">💵 To'lov keldi</option>
+          <option value="mahsulot_olindi">⬇️ Mahsulot olindi</option>
+          <option value="pul_berildi">💸 Pul berildi</option>
+          <option value="tuzatish">✏️ Tuzatish</option>
+        </select>
+      </label>
+      <label>Qidirish <input id="qidir" placeholder="mijoz, mahsulot, avto..." autocomplete="off"></label>
+    </div>
+    <p class="tushuntir">✏️ Katakni bosing, o'zgartiring va <b>Enter</b> bosing yoki boshqa katakka o'ting — o'zi saqlanadi.
+      Miqdor yoki narx o'zgarsa, summa o'zi qayta hisoblanadi. Yangi yozuv — eng yuqoridagi yashil qatorda.</p>
+    <div class="jadval-bosh">
+      <p id="holat" class="soni">Yuklanmoqda...</p>
+      <button type="button" id="excel" class="tugma-oddiy">📥 Excel</button>
+    </div>
+
+    <p id="xabar" class="jadval-xabar"></p>
+    <div class="grid-oyna" id="oyna">
+      <table class="grid" id="grid">
+        <thead>
+          <tr>
+            <th class="c-mijoz">Mijoz</th>
+            <th class="c-sana">Sana</th>
+            <th class="c-tur">Turi</th>
+            <th class="c-mah">Mahsulot</th>
+            <th class="c-son">Miqdor</th>
+            <th class="c-son">Narx</th>
+            <th class="c-son">Summa</th>
+            <th class="c-kassa">Kassa</th>
+            <th class="c-avto">Avto</th>
+            <th class="c-izoh">Izoh</th>
+            <th class="c-hol"></th>
+          </tr>
+        </thead>
+        <tbody id="yangi"></tbody>
+        <tbody id="qatorlar"></tbody>
+      </table>
+    </div>
+    <button type="button" id="yanaKorsat" class="tugma-ikkinchi" hidden>Yana ko'rsatish</button>
+    <p id="jami" class="jami"></p>
+  </section>
+  <ul id="takliflar" class="takliflar suzuvchi" hidden></ul>
+
+  <script type="module">
+    import { db, loginShart, pul, sana, toza, kalit, mos, saralash, hammasi, valyuta, belgi,
+             csvYukla, bugun, kunQosh, KASSA_NOMI } from './db.js';
+    import { tarmoqXatosi, navbatgaQosh } from './navbat.js';
+
+    const user = await loginShart('jadval');
+    const $ = (id) => document.getElementById(id);
+    const holat = $('holat');
+    // Saqlandi / xato xabari (son yozilgan qatordan alohida)
+    let xabarVaqt;
+    function xabar(matn, turi = 'ok') {
+      const el = $('xabar');
+      el.className = 'jadval-xabar ' + (turi === 'ok' ? 'ok-matn' : 'xato');
+      el.textContent = (turi === 'ok' ? '' : '⚠️ ') + matn;
+      clearTimeout(xabarVaqt);
+      xabarVaqt = setTimeout(() => { el.textContent = ''; }, turi === 'ok' ? 4000 : 8000);
+    }
+
+    const MAHSULOTLI = ['yuk_berildi', 'mahsulot_olindi'];
+    const TOLOV = ['tolov_keldi', 'pul_berildi'];
+    const PLUS = ['yuk_berildi', 'pul_berildi'];   // qarzni oshiradi (+)
+    const TUR = {
+      yuk_berildi: '🚚 Yuk berildi', tolov_keldi: '💵 To\'lov keldi', mahsulot_olindi: '⬇️ Mahsulot olindi',
+      pul_berildi: '💸 Pul berildi', tuzatish: '✏️ Tuzatish',
+    };
+    const KASSIR = user.rol === 'kassir';
+
+    // "1 250 000,5" → 1250000.5 ; bo'sh → null ; noto'g'ri → NaN
+    function son(s) {
+      const t = String(s ?? '').replace(/\s/g, '').replace(',', '.');
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : NaN;
+    }
+    const yaxlit = (x) => Math.round(x * 100) / 100;
+
+    // ---------- Spravochniklar ----------
+    const [mj, mh, mn] = await Promise.all([
+      hammasi(() => db.from('mijoz_qoldiq').select('*').order('nomi').order('id')),
+      db.from('mahsulotlar').select('id, nomi, olchov, oxirgi_narx').order('nomi'),
+      hammasi(() => db.from('mijoz_narx').select('mijoz_id, mahsulot_id, narx').order('mijoz_id')),
+    ]);
+    if (mj.error || mh.error) {
+      const e = mj.error || mh.error;
+      holat.textContent = tarmoqXatosi(e) ? '📴 Internet yo\'q. Jadval internet bilan ishlaydi — internetsiz "Yangi yozuv" bo\'limidan foydalaning.' : 'Xato: ' + e.message;
+      throw e;
+    }
+    const mijozlar = mj.data;
+    const mijozMap = new Map(mijozlar.map(m => [m.id, m]));
+    const mahsulotlar = mh.data;
+    const mahMap = new Map(mahsulotlar.map(m => [m.id, m]));
+    const maxsus = new Map((mn.data || []).map(x => [x.mijoz_id + '-' + x.mahsulot_id, Number(x.narx)]));
+    const usdMi = (mijozId) => valyuta(mijozMap.get(mijozId)) === 'USD';
+
+    const mahOpt = (tanlangan) => '<option value=""></option>' + mahsulotlar.map(m =>
+      `<option value="${m.id}"${m.id == tanlangan ? ' selected' : ''}>${toza(m.nomi)}</option>`).join('');
+    const kassaOpt = (usd, tanlangan) => (usd ? ['dollar'] : ['naqd', 'karta', 'bank']).map(k =>
+      `<option value="${k}"${k === tanlangan ? ' selected' : ''}>${KASSA_NOMI[k]}</option>`).join('');
+
+    // ---------- Yozuvlarni yuklash ----------
+    let yozuvlar = [];       // davrdagi hamma yozuvlar
+    let korinadi = [];       // filtrdan o'tganlari
+    let chegara = 200;       // telefonda sekinlashmasin: birdaniga 200 qator
+    let kassaUstuni = true;  // bazada yozuvlar.kassa ustuni bormi (03-SQL) — yo'q bo'lsa saqlashda bilinadi
+
+    function davrQoy(d) {
+      const t = bugun();
+      const [y, m] = t.split('-');
+      const oyBosh = `${y}-${m}-01`;
+      const oraliq = {
+        bugun: [t, t],
+        hafta: [kunQosh(t, -6), t],
+        oy: [oyBosh, t],
+        otganoy: [(() => { const x = new Date(+y, +m - 2, 1); return x.toLocaleDateString('sv-SE'); })(), kunQosh(oyBosh, -1)],
+        hammasi: ['', ''],
+      }[d];
+      $('dan').value = oraliq[0];
+      $('gacha').value = oraliq[1];
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.toggle('tanlangan', b.dataset.d === d));
+    }
+
+    let yuklashNo = 0;
+    async function yukla() {
+      const no = ++yuklashNo;
+      holat.textContent = 'Yuklanmoqda...';
+      const dan = $('dan').value, gacha = $('gacha').value;
+      const { data, error } = await hammasi(() => {
+        let s = db.from('yozuvlar').select('*');
+        if (dan) s = s.gte('sana', dan);
+        if (gacha) s = s.lte('sana', gacha);
+        return s.order('sana', { ascending: false }).order('id', { ascending: false });
+      });
+      if (no !== yuklashNo) return;   // eski so'rov — keyingisi allaqachon ketgan
+      if (error) { holat.textContent = tarmoqXatosi(error) ? '📴 Internet yo\'q' : 'Xato: ' + error.message; return; }
+      yozuvlar = data.sort((a, b) => (b.sana || '').localeCompare(a.sana || '') || b.id - a.id);
+      chegara = 200;
+      chiz();
+    }
+
+    // ---------- Chizish ----------
+    const qidirMatn = (y) => [mijozMap.get(y.mijoz_id)?.nomi, mahMap.get(y.mahsulot_id)?.nomi, y.avto_raqami, y.izoh].filter(Boolean).join(' ');
+
+    function chiz() {
+      const tur = $('turFiltr').value, soz = $('qidir').value.trim();
+      korinadi = yozuvlar.filter(y => (!tur || y.turi === tur) && (!soz || mos(qidirMatn(y), soz)));
+      $('qatorlar').innerHTML = korinadi.slice(0, chegara).map(qatorHtml).join('');
+      $('yanaKorsat').hidden = korinadi.length <= chegara;
+      $('yanaKorsat').textContent = `Yana ko'rsatish (${korinadi.length - chegara} ta qoldi)`;
+      jamiChiz();
+    }
+
+    function jamiChiz() {
+      holat.textContent = `${korinadi.length} ta yozuv` + (korinadi.length > chegara ? ` (${chegara} tasi ko'rinib turibdi)` : '');
+      // Jami — valyuta bo'yicha alohida (so'm va dollar qo'shilmaydi)
+      const j = {};
+      for (const y of korinadi) {
+        const v = valyuta(mijozMap.get(y.mijoz_id));
+        j[v] ??= { sotuv: 0, tolov: 0, kub: 0 };
+        if (y.turi === 'yuk_berildi') { j[v].sotuv += Math.abs(Number(y.summa || 0)); j[v].kub += Number(y.miqdor || 0); }
+        if (y.turi === 'tolov_keldi') j[v].tolov += Math.abs(Number(y.summa || 0));
+      }
+      $('jami').innerHTML = Object.entries(j).map(([v, x]) =>
+        `🚚 Sotildi: <b>${pul(x.kub)}</b> · <b>${pul(x.sotuv)} ${belgi(v)}</b> &nbsp; 💵 To'lov: <b>${pul(x.tolov)} ${belgi(v)}</b>`).join('<br>');
+    }
+
+    function tahrirMumkin(y) {
+      if (y.qulf) return false;
+      if (KASSIR && !TOLOV.includes(y.turi)) return false;   // bazada ham shunday cheklangan
+      return true;
+    }
+
+    function qatorHtml(y) {
+      const ok = tahrirMumkin(y), dis = ok ? '' : ' disabled';
+      const mahli = MAHSULOTLI.includes(y.turi), tuz = y.turi === 'tuzatish';
+      const m = mijozMap.get(y.mijoz_id);
+      const s = Number(y.summa || 0);
+      const summa = y.summa == null ? '' : pul(tuz ? s : Math.abs(s));
+      const katak = (maydon, qiymat, sinf = '', boshqa = '') =>
+        `<input data-m="${maydon}" class="${sinf}" value="${toza(qiymat ?? '')}"${dis}${boshqa}>`;
+      return `<tr data-id="${y.id}" class="${y.qulf ? 'qulfli' : ''} ${s < 0 ? 'minus' : ''}">
+        <td class="c-mijoz"><a href="sverka.html?mijoz=${y.mijoz_id}" title="Sverkasini ochish">${toza(m?.nomi || '—')}</a></td>
+        <td class="c-sana"><input type="date" data-m="sana" value="${toza(y.sana)}"${dis}></td>
+        <td class="c-tur">${TUR[y.turi] || toza(y.turi)}</td>
+        <td class="c-mah">${mahli ? `<select data-m="mahsulot_id"${dis}>${mahOpt(y.mahsulot_id)}</select>` : ''}</td>
+        <td class="c-son">${mahli ? katak('miqdor', y.miqdor == null ? '' : pul(y.miqdor), 'son', ' inputmode="decimal"') : ''}</td>
+        <td class="c-son">${mahli ? katak('narx', y.narx == null ? '' : pul(y.narx), 'son', ' inputmode="decimal"') : ''}</td>
+        <td class="c-son">${katak('summa', summa, 'son summa', ' inputmode="decimal"')}</td>
+        <td class="c-kassa">${TOLOV.includes(y.turi) && kassaUstuni && y.kassa
+          ? `<select data-m="kassa"${dis}>${kassaOpt(usdMi(y.mijoz_id), y.kassa)}</select>` : ''}</td>
+        <td class="c-avto">${mahli ? katak('avto_raqami', y.avto_raqami) : ''}</td>
+        <td class="c-izoh">${katak('izoh', y.izoh)}</td>
+        <td class="c-hol">${y.qulf ? '🔒' : ''}</td>
+      </tr>`;
+    }
+
+    // ---------- Mavjud yozuvni katakda tahrirlash ----------
+    const navbatda = new Map();   // bir qatorning saqlanishlari ketma-ket ketsin
+
+    $('qatorlar').addEventListener('change', (e) => {
+      const el = e.target.closest('[data-m]');
+      const tr = el?.closest('tr[data-id]');
+      if (!tr) return;
+      const id = Number(tr.dataset.id);
+      const oldingi = navbatda.get(id) || Promise.resolve();
+      const keyin = oldingi.then(() => katakSaqla(tr, el));
+      navbatda.set(id, keyin);
+    });
+
+    function belgila(el, sinf) {
+      el.classList.remove('saqlanmoqda', 'saqlandi', 'xatoli');
+      if (sinf) el.classList.add(sinf);
+      if (sinf === 'saqlandi') setTimeout(() => el.classList.remove('saqlandi'), 1500);
+    }
+
+    async function katakSaqla(tr, el) {
+      const y = yozuvlar.find(x => x.id === Number(tr.dataset.id));
+      if (!y || !tahrirMumkin(y)) return;
+      const maydon = el.dataset.m;
+      const tuz = y.turi === 'tuzatish';
+      const qiymat = (sel) => tr.querySelector(`[data-m="${sel}"]`)?.value;
+      const ozg = {};
+      let xato = '';
+
+      if (maydon === 'sana') {
+        if (!el.value) xato = 'Sana bo\'sh bo\'lmasin';
+        ozg.sana = el.value;
+      } else if (maydon === 'mahsulot_id') {
+        const m = mahMap.get(Number(el.value));
+        if (!m) xato = 'Mahsulotni tanlang';
+        else { ozg.mahsulot_id = m.id; ozg.olchov = m.olchov; }
+      } else if (maydon === 'miqdor' || maydon === 'narx') {
+        const mq = son(qiymat('miqdor')), nx = son(qiymat('narx'));
+        if (Number.isNaN(mq) || (mq !== null && mq <= 0)) xato = 'Miqdorni to\'g\'ri yozing';
+        else if (Number.isNaN(nx) || (nx !== null && nx < 0)) xato = 'Narxni to\'g\'ri yozing';
+        else {
+          ozg.miqdor = mq; ozg.narx = nx;
+          // Excel'dagi formula kabi: summa = miqdor × narx
+          if (mq > 0 && nx > 0) ozg.summa = yaxlit(mq * nx);
+        }
+      } else if (maydon === 'summa') {
+        const s = son(el.value);
+        if (s === null || Number.isNaN(s) || s === 0 || (!tuz && s < 0)) xato = 'Summani to\'g\'ri yozing';
+        ozg.summa = s;   // belgini (+/−) baza turiga qarab o'zi qo'yadi
+      } else if (maydon === 'kassa') {
+        ozg.kassa = el.value;
+      } else if (maydon === 'avto_raqami' || maydon === 'izoh') {
+        ozg[maydon] = el.value.trim() || null;
+      } else return;
+
+      if (xato) {
+        belgila(el, 'xatoli');
+        xabar(xato + ' — saqlanmadi', 'xato');
+        tr.outerHTML = qatorHtml(y);   // eski qiymat qaytadi
+        return;
+      }
+
+      belgila(el, 'saqlanmoqda');
+      const { data, error } = await db.from('yozuvlar').update(ozg).eq('id', y.id).select('*').maybeSingle();
+      const joriy = document.querySelector(`#qatorlar tr[data-id="${y.id}"]`);
+      if (error) {
+        xabar(tarmoqXatosi(error) ? 'Internet yo\'q — saqlanmadi' :
+          /qulflangan/i.test(error.message) ? 'Bu yozuv qulflangan, uni o\'zgartirib bo\'lmaydi' : 'Saqlanmadi: ' + error.message, 'xato');
+        if (joriy) { joriy.outerHTML = qatorHtml(y); }
+        const yangiTr = document.querySelector(`#qatorlar tr[data-id="${y.id}"]`);
+        const k = yangiTr?.querySelector(`[data-m="${maydon}"]`);
+        if (k) belgila(k, 'xatoli');
+        return;
+      }
+      if (data) Object.assign(y, data);
+      else {   // baza qatorni qaytarmasa — o'zimiz hisoblaymiz
+        Object.assign(y, ozg);
+        if (ozg.summa != null && !tuz) y.summa = Math.abs(ozg.summa) * (PLUS.includes(y.turi) ? 1 : -1);
+      }
+      // Qator qayta chiziladi (summa yangilanadi), fokus joyida qoladi
+      if (joriy) {
+        const fokus = document.activeElement?.closest('#qatorlar tr[data-id]') === joriy ? document.activeElement.dataset.m : null;
+        const yangi = document.createElement('tbody');
+        yangi.innerHTML = qatorHtml(y);
+        const yangiTr = yangi.firstElementChild;
+        // hali saqlanmagan, yozilayotgan katakni yo'qotmaymiz
+        if (fokus && fokus !== maydon) {
+          const eski = joriy.querySelector(`[data-m="${fokus}"]`), nus = yangiTr.querySelector(`[data-m="${fokus}"]`);
+          if (eski && nus) nus.value = eski.value;
+        }
+        joriy.replaceWith(yangiTr);
+        if (fokus) yangiTr.querySelector(`[data-m="${fokus}"]`)?.focus();
+        const k = yangiTr.querySelector(`[data-m="${maydon}"]`);
+        if (k) belgila(k, 'saqlandi');
+        if ('summa' in ozg) { const s = yangiTr.querySelector('[data-m="summa"]'); if (s) belgila(s, 'saqlandi'); }
+      }
+      xabar(`✅ Saqlandi: ${mijozMap.get(y.mijoz_id)?.nomi || ''}, ${sana(y.sana)}`);
+      jamiChiz();
+    }
+
+    // ---------- Klaviatura: Enter / ↑ / ↓ — Excel'dagidek qatorlar bo'ylab ----------
+    $('grid').addEventListener('keydown', (e) => {
+      const el = e.target.closest('input[data-m], select[data-m]');
+      if (!el) return;
+      const tr = el.closest('tr');
+      const yangiQator = tr.parentElement.id === 'yangi';
+      if (e.key === 'Enter' && yangiQator) { e.preventDefault(); yangiSaqla(); return; }
+      let qadam = 0;
+      if (e.key === 'Enter') qadam = e.shiftKey ? -1 : 1;
+      else if (el.tagName === 'INPUT' && el.type !== 'date' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) qadam = e.key === 'ArrowDown' ? 1 : -1;
+      if (!qadam) return;
+      e.preventDefault();
+      let q = qadam > 0 ? tr.nextElementSibling : tr.previousElementSibling;
+      while (q) {
+        const k = q.querySelector(`[data-m="${el.dataset.m}"]:not(:disabled)`);
+        if (k) { k.focus(); if (k.select) k.select(); return; }
+        q = qadam > 0 ? q.nextElementSibling : q.previousElementSibling;
+      }
+      el.blur();   // oxirgi qator — saqlanadi
+    });
+    // Katakni bosganda ichidagi son butunlay tanlansin (darhol ustidan yozish uchun)
+    $('grid').addEventListener('focusin', (e) => {
+      if (e.target.matches('input.son')) setTimeout(() => { if (document.activeElement === e.target) e.target.select(); }, 0);
+    });
+
+    // ---------- Yangi yozuv qatori ----------
+    let yMijoz = null, ySummaQolda = false;
+    function yangiChiz(saqlansin = {}) {
+      const turlar = KASSIR ? TOLOV : ['yuk_berildi', 'tolov_keldi', 'mahsulot_olindi', 'pul_berildi'];
+      const tur = saqlansin.turi && turlar.includes(saqlansin.turi) ? saqlansin.turi : turlar[0];
+      $('yangi').innerHTML = `<tr class="yangi-qator">
+        <td class="c-mijoz"><input data-m="mijoz" id="yMijoz" placeholder="➕ Mijoz..." autocomplete="off"></td>
+        <td class="c-sana"><input type="date" data-m="sana" id="ySana" value="${toza(saqlansin.sana || bugun())}"></td>
+        <td class="c-tur"><select data-m="turi" id="yTuri">${turlar.map(t => `<option value="${t}"${t === tur ? ' selected' : ''}>${TUR[t]}</option>`).join('')}</select></td>
+        <td class="c-mah"><select data-m="mahsulot_id" id="yMah">${mahOpt().replace('<option value=""></option>', '<option value="">Mahsulot...</option>')}</select></td>
+        <td class="c-son"><input data-m="miqdor" id="yMiqdor" class="son" inputmode="decimal" placeholder="0"></td>
+        <td class="c-son"><input data-m="narx" id="yNarx" class="son" inputmode="decimal" placeholder="0"></td>
+        <td class="c-son"><input data-m="summa" id="ySumma" class="son" inputmode="decimal" placeholder="0"></td>
+        <td class="c-kassa"><select data-m="kassa" id="yKassa"></select></td>
+        <td class="c-avto"><input data-m="avto_raqami" id="yAvto"></td>
+        <td class="c-izoh"><input data-m="izoh" id="yIzoh"></td>
+        <td class="c-hol"><button type="button" id="yQosh" title="Qo'shish">➕</button></td>
+      </tr>`;
+      ySummaQolda = false;
+      if (saqlansin.mijoz) mijozTanla(saqlansin.mijoz); else yMijoz = null;
+      turAlmashdi();
+      $('yQosh').addEventListener('click', yangiSaqla);
+    }
+
+    function turAlmashdi() {
+      const mahli = MAHSULOTLI.includes($('yTuri').value);
+      ['yMah', 'yMiqdor', 'yNarx', 'yAvto'].forEach(id => { $(id).disabled = !mahli; if (!mahli) $(id).value = ''; });
+      $('yKassa').disabled = mahli || !kassaUstuni;
+      kassaYangila();
+      if (!ySummaQolda) hisobla();
+    }
+    function kassaYangila() {
+      const usd = yMijoz && valyuta(yMijoz) === 'USD';
+      const eski = $('yKassa').value;
+      $('yKassa').innerHTML = MAHSULOTLI.includes($('yTuri').value) ? '' : kassaOpt(usd, eski === 'dollar' && !usd ? 'naqd' : eski || (usd ? 'dollar' : 'naqd'));
+    }
+    function narxQoy() {
+      const m = mahMap.get(Number($('yMah').value));
+      const mx = m && yMijoz ? maxsus.get(yMijoz.id + '-' + m.id) : undefined;
+      const usd = yMijoz && valyuta(yMijoz) === 'USD';
+      if (mx !== undefined) $('yNarx').value = pul(mx);
+      else if (m?.oxirgi_narx && !usd) $('yNarx').value = pul(m.oxirgi_narx);
+      else $('yNarx').value = '';
+      hisobla();
+    }
+    function hisobla() {
+      if (ySummaQolda || !MAHSULOTLI.includes($('yTuri').value)) return;
+      const mq = son($('yMiqdor').value), nx = son($('yNarx').value);
+      $('ySumma').value = mq > 0 && nx > 0 ? pul(yaxlit(mq * nx)) : '';
+    }
+    $('yangi').addEventListener('change', (e) => {
+      if (e.target.id === 'yTuri') turAlmashdi();
+      if (e.target.id === 'yMah') narxQoy();
+    });
+    $('yangi').addEventListener('input', (e) => {
+      if (e.target.id === 'yMiqdor' || e.target.id === 'yNarx') hisobla();
+      if (e.target.id === 'ySumma') ySummaQolda = e.target.value.trim() !== '';
+      if (e.target.id === 'yMijoz') takliflarChiz();
+    });
+
+    // Mijoz qidiruvi (lotin ↔ kirill), katak tagida ochiladi
+    const takliflar = $('takliflar');
+    function mijozTanla(m) {
+      yMijoz = m;
+      $('yMijoz').value = m.nomi;
+      $('yMijoz').classList.remove('xatoli');
+      takliflar.hidden = true;
+      kassaYangila();
+      if ($('yMah').value) narxQoy();
+    }
+    function takliflarChiz() {
+      yMijoz = null;
+      const inp = $('yMijoz'), soz = inp.value.trim();
+      if (!soz) { takliflar.hidden = true; return; }
+      const topildi = saralash(mijozlar.filter(m => mos(m.nomi, soz)), soz).slice(0, 12);
+      const aniq = mijozlar.some(m => kalit(m.nomi) === kalit(soz));
+      takliflar.innerHTML = topildi.map(m =>
+        `<li data-id="${m.id}"><span>${toza(m.nomi)}</span><small>${pul(m.qoldiq)}</small></li>`).join('') +
+        (aniq || KASSIR ? '' : `<li data-yangi="1">➕ Yangi mijoz: <b>${toza(soz)}</b></li>`) +
+        (!topildi.length && (aniq || KASSIR) ? '<li class="bosh">Topilmadi</li>' : '');
+      takliflar.hidden = false;
+      joylashtir();
+    }
+    function joylashtir() {   // ro'yxat mijoz katagi tagida tursin
+      if (takliflar.hidden) return;
+      const r = $('yMijoz').getBoundingClientRect();
+      takliflar.style.left = Math.max(4, Math.min(r.left, innerWidth - 250)) + scrollX + 'px';
+      takliflar.style.top = (r.bottom + scrollY + 4) + 'px';
+      takliflar.style.minWidth = Math.max(r.width, 240) + 'px';
+    }
+    takliflar.addEventListener('mousedown', (e) => e.preventDefault());   // katakdan fokus ketmasin
+    takliflar.addEventListener('click', async (e) => {
+      const li = e.target.closest('li');
+      if (!li) return;
+      if (li.dataset.id) { mijozTanla(mijozMap.get(Number(li.dataset.id))); ($('yMah').disabled ? $('ySumma') : $('yMah')).focus(); return; }
+      if (li.dataset.yangi) {
+        const nomi = $('yMijoz').value.trim();
+        if (!confirm(`"${nomi}" yangi mijoz sifatida qo'shilsinmi?`)) return;
+        const { data, error } = await db.from('mijozlar').insert({ nomi }).select('*').single();
+        if (error) { xabar('Mijoz qo\'shilmadi: ' + error.message, 'xato'); return; }
+        const m = { ...data, qoldiq: 0 };
+        mijozlar.push(m); mijozMap.set(m.id, m);
+        mijozTanla(m);
+      }
+    });
+    document.addEventListener('focusin', (e) => { if (e.target.id !== 'yMijoz') takliflar.hidden = true; });
+    $('oyna').addEventListener('scroll', joylashtir);
+    addEventListener('resize', joylashtir);
+
+    let saqlanmoqda = false;
+    async function yangiSaqla() {
+      if (saqlanmoqda) return;
+      if (!takliflar.hidden && !yMijoz) {   // Enter — birinchi taklif tanlanadi
+        const birinchi = takliflar.querySelector('li[data-id]');
+        if (birinchi) { birinchi.click(); return; }
+      }
+      const xato = (matn, id) => {
+        xabar(matn, 'xato');
+        if (id) { $(id).classList.add('xatoli'); $(id).focus(); setTimeout(() => $(id)?.classList.remove('xatoli'), 2000); }
+      };
+      const turi = $('yTuri').value;
+      if (!$('ySana').value) return xato('Sanani tanlang', 'ySana');
+      if (!yMijoz) return xato('Mijozni ro\'yxatdan tanlang', 'yMijoz');
+      const yozuv = { sana: $('ySana').value, mijoz_id: yMijoz.id, turi, izoh: $('yIzoh').value.trim() || null };
+      if (MAHSULOTLI.includes(turi)) {
+        const m = mahMap.get(Number($('yMah').value));
+        const mq = son($('yMiqdor').value), nx = son($('yNarx').value);
+        if (!m) return xato('Mahsulotni tanlang', 'yMah');
+        if (!(mq > 0)) return xato('Miqdorni to\'g\'ri yozing', 'yMiqdor');
+        if (Number.isNaN(nx) || nx < 0) return xato('Narxni to\'g\'ri yozing', 'yNarx');
+        Object.assign(yozuv, { mahsulot_id: m.id, olchov: m.olchov, miqdor: mq, narx: nx, avto_raqami: $('yAvto').value.trim() || null });
+      } else if (kassaUstuni) yozuv.kassa = $('yKassa').value;
+      const s = son($('ySumma').value);
+      if (!(s > 0)) return xato('Summani to\'g\'ri yozing', 'ySumma');
+      yozuv.summa = s;
+      if (crypto.randomUUID) yozuv.client_id = crypto.randomUUID();
+
+      saqlanmoqda = true;
+      $('yQosh').disabled = true;
+      let data, error;
+      for (let urinish = 0; urinish < 3; urinish++) {   // bazada ustun hali yo'q bo'lsa — usiz
+        ({ data, error } = await db.from('yozuvlar').insert(yozuv).select('*').single());
+        const ustunYoq = error && (error.code === 'PGRST204' || error.code === '42703' || /column|does not exist/i.test(error.message || ''));
+        const ustun = ustunYoq && ['kassa', 'client_id'].find(u => u in yozuv && (error.message || '').includes(u));
+        if (!ustun) break;
+        delete yozuv[ustun];
+        if (ustun === 'kassa') kassaUstuni = false;
+      }
+      saqlanmoqda = false;
+      $('yQosh').disabled = false;
+      const qolsin = { sana: yozuv.sana, turi, mijoz: yMijoz };
+      if (error && tarmoqXatosi(error)) {
+        const n = navbatgaQosh(yozuv, yMijoz.nomi);
+        yangiChiz(qolsin);
+        xabar(`📴 Internet yo'q — telefonda saqlandi (navbatda ${n} ta), internet qaytganda o'zi yuboriladi`);
+        return;
+      }
+      if (error) return xato('Saqlanmadi: ' + error.message);
+
+      // Mahsulotning oxirgi narxi (keyingi safar o'zi chiqadi) — "Yangi yozuv" sahifasidagidek
+      if (yozuv.mahsulot_id && yozuv.narx && valyuta(yMijoz) !== 'USD' && maxsus.get(yMijoz.id + '-' + yozuv.mahsulot_id) !== yozuv.narx) {
+        const m = mahMap.get(yozuv.mahsulot_id);
+        if (m.oxirgi_narx != yozuv.narx) { m.oxirgi_narx = yozuv.narx; db.from('mahsulotlar').update({ oxirgi_narx: yozuv.narx }).eq('id', m.id).then(() => {}); }
+      }
+      const y = data || { ...yozuv, id: Date.now(), summa: s * (PLUS.includes(turi) ? 1 : -1), qulf: false };
+      yMijoz.qoldiq = Number(yMijoz.qoldiq || 0) + Number(y.summa || 0);
+      yozuvlar.unshift(y);
+      chiz();
+      document.querySelector(`#qatorlar tr[data-id="${y.id}"]`)?.classList.add('yangi-qoshildi');
+      yangiChiz(qolsin);
+      xabar(`✅ Qo'shildi: ${yMijoz.nomi} — ${pul(Math.abs(y.summa))} ${belgi(valyuta(yMijoz))}. Qoldiq: ${pul(yMijoz.qoldiq)}`);
+      ($('yMah').disabled ? $('ySumma') : $('yMiqdor')).focus();
+    }
+
+    // ---------- Filtrlar ----------
+    $('davrlar').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-d]');
+      if (!b) return;
+      davrQoy(b.dataset.d);
+      yukla();
+    });
+    ['dan', 'gacha'].forEach(id => $(id).addEventListener('change', () => {
+      document.querySelectorAll('#davrlar button').forEach(b => b.classList.remove('tanlangan'));
+      yukla();
+    }));
+    $('turFiltr').addEventListener('change', chiz);
+    let kechik;
+    $('qidir').addEventListener('input', () => { clearTimeout(kechik); kechik = setTimeout(chiz, 200); });
+    $('yanaKorsat').addEventListener('click', () => { chegara += 200; chiz(); });
+
+    $('excel').addEventListener('click', () => {
+      csvYukla(`jadval_${$('dan').value || 'boshidan'}_${$('gacha').value || bugun()}`,
+        ['Sana', 'Mijoz', 'Turi', 'Mahsulot', 'Miqdor', 'Narx', 'Summa', 'Kassa', 'Avto', 'Izoh'],
+        korinadi.map(y => [sana(y.sana), mijozMap.get(y.mijoz_id)?.nomi || '', (TUR[y.turi] || y.turi).replace(/^\S+\s/, ''),
+          mahMap.get(y.mahsulot_id)?.nomi || '', y.miqdor == null ? '' : Number(y.miqdor), y.narx == null ? '' : Number(y.narx),
+          Number(y.summa || 0), y.kassa || '', y.avto_raqami || '', y.izoh || '']));
+    });
+
+    // ---------- Boshlanish ----------
+    yangiChiz();
+    davrQoy('oy');
+    await yukla();
+    $('yangi').querySelector('#yTuri').dispatchEvent(new Event('change', { bubbles: true }));
+  </script>
+</body>
+</html>

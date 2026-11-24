@@ -353,3 +353,60 @@ tr.yetmaydi td { background: #fdecea; }
 .mijoz-qator .mijoz-nom small { display: block; font-weight: 400; color: #8a6a50; font-size: 12px; margin-top: 2px; }
 .mijoz-qator b { white-space: nowrap; font-size: 15px; }
 #royxatga { margin: 0 0 10px; }
+
+/* ---------- Jadval (Excel kabi kataklar) ---------- */
+.panel.keng { max-width: 1400px; }
+.jadval-davr { display: flex; flex-wrap: wrap; gap: 6px; }
+.jadval-davr button { flex: 1 0 auto; width: auto; padding: 10px 12px; font-size: 14px; margin: 0; white-space: nowrap; }
+.jadval-filtr { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.jadval-filtr label { min-width: 0; }
+.jadval-filtr input, .jadval-filtr select { margin-bottom: 6px; min-width: 0; width: 100%; }
+@media (max-width: 600px) { .panel.keng { width: calc(100% - 16px); padding: 12px; margin: 10px auto; } .jadval-filtr { grid-template-columns: 1fr 1fr; } .jadval-filtr input, .jadval-filtr select { font-size: 16px; padding: 10px 8px; } }
+.jadval-bosh { display: flex; align-items: center; gap: 10px; }
+.jadval-bosh .soni { flex: 1; margin: 6px 0; }
+.jadval-bosh button { width: auto; margin: 0; padding: 8px 14px; font-size: 15px; }
+.jadval-xabar { min-height: 1.3em; margin: 4px 0 8px; font-size: 14px; }
+.ok-matn { color: #1e8449; }
+.grid-oyna { overflow: auto; max-height: 70vh; border: 1px solid #d9cfc6; border-radius: 8px; -webkit-overflow-scrolling: touch; }
+table.grid { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 14px; }
+.grid th, .grid td { padding: 0; border-right: 1px solid #eee3da; border-bottom: 1px solid #eee3da; white-space: nowrap; }
+.grid th { background: #f6f2ee; color: #5A2E0E; padding: 8px 6px; position: sticky; top: 0; z-index: 2; font-size: 13px; }
+.grid td.c-mijoz, .grid th.c-mijoz { position: sticky; left: 0; z-index: 1; background: white; box-shadow: 1px 0 0 #d9cfc6; }
+.grid th.c-mijoz { z-index: 3; background: #f6f2ee; }
+.grid td.c-mijoz { max-width: 170px; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+.grid td.c-mijoz a { color: #3a2410; text-decoration: none; font-weight: 600; }
+.grid td.c-tur { padding: 0 8px; font-size: 13px; color: #8a6a50; }
+.grid td.c-hol { text-align: center; padding: 0 4px; min-width: 34px; }
+.grid input, .grid select {
+  width: 100%; margin: 0; border: 2px solid transparent; border-radius: 0; background: transparent;
+  padding: 8px 6px; font-size: 16px; color: #3a2410; box-sizing: border-box; font-family: inherit;
+}
+.grid select { -webkit-appearance: none; appearance: none; cursor: pointer; }
+.grid tr.yangi-qator select:invalid, .grid tr.yangi-qator #yMah option[value=""] { color: #9bb8a2; }
+.grid input:focus, .grid select:focus { outline: none; border-color: #E8731A; background: #fffaf5; }
+.grid input:disabled, .grid select:disabled { color: #8a6a50; cursor: not-allowed; }
+.grid input.son { text-align: right; }
+.grid .c-sana input { width: 150px; }
+@media (max-width: 600px) { .grid .c-sana input { width: 132px; padding: 8px 4px; } .grid td.c-mijoz { max-width: 120px; } .grid tr.yangi-qator .c-mijoz input { width: 120px; } }
+.grid .c-mah select { width: 150px; }
+.grid .c-son input { width: 115px; }
+.grid .c-kassa select { width: 110px; }
+.grid .c-avto input { width: 110px; }
+.grid .c-izoh input { width: 200px; }
+.grid tr.minus input.summa { color: #1e8449; }
+.grid tr.qulfli td { background: #f6f2ee; }
+.grid tbody#qatorlar tr:hover td { background: #fffaf5; }
+.grid tbody#qatorlar tr.qulfli:hover td { background: #f6f2ee; }
+.grid tr.yangi-qator td { background: #eef8f0; border-bottom: 2px solid #8fcf9f; }
+.grid tr.yangi-qator td.c-mijoz { background: #eef8f0; }
+.grid tr.yangi-qator .c-mijoz { padding: 0; }
+.grid tr.yangi-qator .c-mijoz input { width: 170px; }
+.grid tr.yangi-qator input::placeholder { color: #9bb8a2; }
+.grid tr.yangi-qator #yQosh { width: 40px; padding: 6px 0; margin: 2px; border-radius: 8px; font-size: 16px; }
+.grid tr.yangi-qator input:disabled, .grid tr.yangi-qator select:disabled { background: #e3efe6; }
+.grid tr.yangi-qoshildi td { animation: yangiYon 2s ease-out; }
+@keyframes yangiYon { from { background: #c8ecd1; } }
+.grid .saqlanmoqda { background: #fff6d6 !important; }
+.grid .saqlandi { background: #d6f2dd !important; transition: background 1s; }
+.grid .xatoli, .grid tr.yangi-qator .xatoli { background: #fbe0dc !important; border-color: #c0392b !important; }
+.takliflar.suzuvchi { position: absolute; z-index: 20; background: white; margin: 0; box-shadow: 0 6px 18px rgba(0,0,0,0.15); max-height: 40vh; }

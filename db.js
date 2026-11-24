@@ -24,6 +24,7 @@ export { navbat, navbatYubor };
 export const SAHIFA_ROLLAR = {
   yozuv:       ['admin', 'rahbar', 'sotuvchi', 'kassir'],
   sverka:      ['admin', 'rahbar', 'sotuvchi', 'kassir'],
+  jadval:      ['admin', 'rahbar', 'sotuvchi', 'kassir'],
   kassa:       ['admin', 'rahbar', 'kassir'],
   ombor:       ['admin', 'rahbar', 'omborchi', 'sotuvchi'],
   ishlab:      ['admin', 'rahbar', 'omborchi'],
